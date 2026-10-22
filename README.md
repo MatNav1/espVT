@@ -34,6 +34,13 @@ Plytka ESP32-S3-Touch-LCD-7B ma:
 Uwaga: port USB i CAN wspoldziela linie GPIO19/20. Do programowania uzywaj portu
 UART/USB plytki albo przelacz EXIO5 w tryb USB zgodnie z dokumentacja Waveshare.
 
+## Obudowa do druku 3D
+
+Aktualny model obudowy znajduje się w pliku
+`ESP32-S3-Touch-LCD-7B_V42_VESA_RAM_M5_SY8205_RS232_43MM_PETG.stl`.
+Model jest przygotowany dla wariantu z mocowaniem VESA/RAM, śrubami M5,
+zasilaniem SY8205 i złączem RS-232; przewidziany materiał to PETG.
+
 ## Struktura
 
 - `main/board_pins.hpp` - stale sprzetowe dla ESP32-S3-Touch-LCD-7B.
