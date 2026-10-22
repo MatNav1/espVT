@@ -7,7 +7,7 @@ Projekt terminala dostepowego ISOBUS/UT na plytce Waveshare
 ESP32-S3-Touch-LCD-7B z AgIsoStack++.
 
 Repozytorium zawiera również firmware osobnego panelu przycisków AUX-N dla
-ESP32U w katalogu `auxn_buttons_esp32` oraz modele obudowy do druku 3D.
+ESP32U w katalogu `auxn_buttons_esp32`.
 
 ## Cel
 
