@@ -1,0 +1,32 @@
+# macOS and editor files
+.DS_Store
+*.swp
+*.swo
+
+# ESP-IDF generated configuration and build output
+/build/
+/build-*/
+/sdkconfig
+/sdkconfig.old
+/sdkconfig.rs232
+/sdkconfig.*.old
+*.elf
+*.map
+
+# PlatformIO output
+**/.pio/
+
+# Local and historical firmware packages
+/releases/
+/*.zip
+
+# Local credentials or machine-specific overrides
+sdkconfig.local
+sdkconfig.secrets
+*.secrets
+.env
+.env.*
+
+# Temporary dependency metadata retained only on the development machine
+/third_party/.AgIsoStack-plus-plus.git-backup/
+

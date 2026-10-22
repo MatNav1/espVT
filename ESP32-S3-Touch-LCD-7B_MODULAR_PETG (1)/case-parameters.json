@@ -1,0 +1,94 @@
+{
+  "glass": [
+    192.96,
+    110.76
+  ],
+  "glassClearance": 0.3,
+  "screenOpening": [
+    190,
+    107.8
+  ],
+  "outer": [
+    212,
+    130
+  ],
+  "frontThickness": 5,
+  "frontLip": 2,
+  "rearDepth": 30,
+  "rearBack": 4,
+  "wall": 3,
+  "um982RearDepth": 48,
+  "rs232RearDepth": 40,
+  "caseScrewXY": [
+    101,
+    60
+  ],
+  "caseClearanceDiameter": 3.4,
+  "caseInsertHoleDiameter": 4.1,
+  "mountClearanceDiameter": 4.5,
+  "nutAcrossFlats": 7.3,
+  "nutDepth": 3.5,
+  "vesaSpacing": [
+    75,
+    75
+  ],
+  "ampsSpacing": [
+    38,
+    30
+  ],
+  "switchCutout": [
+    19.4,
+    13.4
+  ],
+  "switchX": 30,
+  "cableHoleDiameter": 12.5,
+  "cableX": -55,
+  "um982Board": [
+    25.66,
+    36.58,
+    6.1
+  ],
+  "um982HoleSpacing": [
+    20.07,
+    30.86
+  ],
+  "um982Center": [
+    -72,
+    35
+  ],
+  "um982PilotDiameter": 2.1,
+  "rs232UniversalArea": [
+    82,
+    56
+  ],
+  "smaBulkheadDiameter": 6.8,
+  "um982UsbOpening": [
+    12,
+    8
+  ],
+  "db9Opening": [
+    20.5,
+    11
+  ],
+  "db9ScrewSpacing": 25,
+  "modularPanelCenterXZ": [
+    72,
+    24
+  ],
+  "modularPanelOuter": [
+    56,
+    46
+  ],
+  "modularPanelOpening": [
+    44,
+    34
+  ],
+  "modularPanelScrewSpacing": [
+    48,
+    40
+  ],
+  "modularUm982Center": [
+    -75,
+    20
+  ]
+}

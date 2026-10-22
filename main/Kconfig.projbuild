@@ -1,0 +1,228 @@
+menu "ESP ISOBUS VT"
+
+config ISOVT_ENABLE_AGISOSTACK
+    bool "Enable AgIsoStack++ VT server adapter"
+    default y
+    help
+        Builds the ISOBUS Virtual Terminal server with the ESP32-S3 TWAI driver.
+
+config ISOVT_MANUFACTURER_CODE
+    int "ISOBUS manufacturer code"
+    range 0 2047
+    default 0
+    help
+        Set this to the ISO 11783 manufacturer code assigned to your company
+        before connecting the terminal to a production ISOBUS network.
+
+config ISOVT_IDENTITY_NUMBER
+    int "ISOBUS terminal identity number"
+    range 0 2097151
+    default 1
+    help
+        Unique identity number of this terminal within the manufacturer's range.
+
+menu "Audio output"
+
+config ISOVT_ENABLE_AUDIO
+    bool "Enable ISO-VT alarm and audio signal output"
+    default y
+    help
+        Plays Alarm Mask signals and Control Audio Signal commands through a
+        MAX98357A I2S mono amplifier and an external speaker.
+
+if ISOVT_ENABLE_AUDIO
+
+config ISOVT_AUDIO_I2S_BCLK_GPIO
+    int "MAX98357A BCLK GPIO"
+    range 0 48
+    default 6
+
+config ISOVT_AUDIO_I2S_WS_GPIO
+    int "MAX98357A LRC/WS GPIO"
+    range 0 48
+    default 12
+
+config ISOVT_AUDIO_I2S_DOUT_GPIO
+    int "MAX98357A DIN GPIO"
+    range 0 48
+    default 13
+    help
+        GPIO12 and GPIO13 are also SD-card SPI pins. The SD card cannot be used
+        while the audio amplifier is connected with this default mapping.
+
+config ISOVT_AUDIO_DEFAULT_VOLUME
+    int "Default command tone volume (percent)"
+    range 0 100
+    default 70
+
+config ISOVT_AUDIO_ALARM_VOLUME
+    int "Alarm Mask tone volume (percent)"
+    range 0 100
+    default 90
+    help
+        Alarm Mask volume is independent of Set Audio Volume commands.
+
+endif
+endmenu
+
+menu "Optional GNSS input"
+
+choice ISOVT_GNSS_SOURCE
+    prompt "GNSS receiver variant"
+    default ISOVT_GNSS_SOURCE_NONE
+
+config ISOVT_GNSS_SOURCE_NONE
+    bool "No external GNSS receiver"
+
+config ISOVT_GNSS_SOURCE_UM982
+    bool "RTK variant: UM982 over 3.3 V TTL UART"
+    help
+        Enables UM982 with NMEA input and optional NTRIP RTCM corrections.
+
+config ISOVT_GNSS_SOURCE_RS232
+    bool "Serial variant: NMEA GPS over RS-232"
+    help
+        Enables a standard NMEA receiver through a 3.3 V MAX3232-compatible
+        RS-232 transceiver. This can also carry RTK NMEA from an external RTK
+        receiver. The ESP32-S3 must never be wired directly to RS-232.
+
+endchoice
+
+if ISOVT_GNSS_SOURCE_UM982
+
+config ISOVT_UM982_UART_PORT
+    int "UM982 UART controller"
+    range 1 2
+    default 1
+
+config ISOVT_UM982_UART_RX_GPIO
+    int "ESP GPIO connected to UM982 TX"
+    default -1
+    help
+        Leave as -1 until a free, physically exposed GPIO is verified.
+
+config ISOVT_UM982_UART_TX_GPIO
+    int "ESP GPIO connected to UM982 RX"
+    default -1
+    help
+        Leave as -1 until a free, physically exposed GPIO is verified.
+
+config ISOVT_UM982_UART_BAUD_RATE
+    int "UM982 UART baud rate"
+    range 9600 921600
+    default 460800
+    help
+        The selected UM982 port must be configured to this speed.
+
+config ISOVT_ENABLE_NTRIP
+    bool "Enable NTRIP RTCM corrections over Wi-Fi"
+    depends on !APP_NO_BLOBS
+    default y
+    help
+        Connects ESP32-S3 to Wi-Fi, opens an NTRIP stream and forwards RTCM
+        bytes to UM982 over the selected UART. This needs Espressif Wi-Fi blobs.
+
+if ISOVT_ENABLE_NTRIP
+
+config ISOVT_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+
+config ISOVT_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+
+config ISOVT_NTRIP_HOST
+    string "NTRIP caster host"
+    default ""
+
+config ISOVT_NTRIP_PORT
+    int "NTRIP caster port"
+    range 1 65535
+    default 2101
+
+config ISOVT_NTRIP_MOUNTPOINT
+    string "NTRIP mountpoint"
+    default ""
+
+config ISOVT_NTRIP_USERNAME
+    string "NTRIP username"
+    default ""
+
+config ISOVT_NTRIP_PASSWORD
+    string "NTRIP password"
+    default ""
+    help
+        This is embedded in the local firmware configuration. Do not commit
+        a configured sdkconfig file to a public repository.
+
+endif
+endif
+
+if ISOVT_GNSS_SOURCE_RS232
+
+config ISOVT_RS232_UART_PORT
+    int "RS-232 UART controller"
+    range 1 2
+    default 1
+
+config ISOVT_RS232_UART_RX_GPIO
+    int "ESP GPIO connected to MAX3232 TTL TX"
+    default -1
+    help
+        Leave as -1 until a free, physically exposed GPIO is verified.
+
+config ISOVT_RS232_UART_TX_GPIO
+    int "ESP GPIO connected to MAX3232 TTL RX"
+    default -1
+    help
+        This TX is optional for a read-only GPS source but is kept available
+        for receivers which accept NMEA configuration commands.
+
+config ISOVT_RS232_UART_BAUD_RATE
+    int "RS-232 GPS UART baud rate"
+    range 1200 921600
+    default 4800
+    help
+        4800 is the traditional NMEA-0183 default. Set the value used by the
+        connected receiver.
+
+endif
+endmenu
+
+menu "Automatic section control safety"
+    depends on ISOVT_GNSS_SOURCE_UM982 || ISOVT_GNSS_SOURCE_RS232
+
+choice ISOVT_SECTION_CONTROL_MINIMUM_FIX
+    prompt "Minimum GNSS quality for automatic sections"
+    default ISOVT_SECTION_CONTROL_REQUIRE_RTK_FIXED
+    help
+        Select the minimum quality accepted by the future TC-GEO section
+        controller. Position age and, when enabled, NTRIP correction age are
+        checked separately.
+
+config ISOVT_SECTION_CONTROL_REQUIRE_RTK_FIXED
+    bool "RTK FIX only (recommended)"
+    help
+        Requires NMEA GGA quality 4. This is the conservative production mode.
+
+config ISOVT_SECTION_CONTROL_ALLOW_RTK_FLOAT
+    bool "RTK FLOAT or RTK FIX"
+    help
+        Also accepts NMEA GGA quality 5. Use only after field validation with
+        the implement width and acceptable overlap; float solutions can shift.
+
+endchoice
+
+config ISOVT_SECTION_CONTROL_SECTION_COUNT
+    int "Implement section count for safety monitor"
+    range 1 255
+    default 16
+    help
+        Number displayed by the section-control safety monitor. It will become
+        the default channel count when a validated DDOP-to-section adapter is
+        enabled for a specific implement.
+
+endmenu
+
+endmenu

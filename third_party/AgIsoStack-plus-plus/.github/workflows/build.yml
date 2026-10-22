@@ -1,0 +1,110 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  BUILD_TYPE: Debug
+
+jobs:
+  build_test_analyze:
+    name: Ubuntu Build, Test and Analyze
+    runs-on: ubuntu-latest
+    env:
+      BUILD_WRAPPER_OUT_DIR: build-wrapper-output
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Set up Python 3.8 for gcovr
+        uses: actions/setup-python@v6
+        with:
+          python-version: 3.8
+          cache: "pip"
+      - name: install gcovr
+        run: |
+          pip install gcovr
+      - name: Install sonar-scanner and build-wrapper
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v8
+      - name: Run build-wrapper
+        run: |
+          mkdir build
+          cmake -S . -B build -DBUILD_EXAMPLES=ON -DBUILD_TESTING=ON -DCAN_DRIVER=SocketCAN -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build build/ --config ${{ env.BUILD_TYPE }}
+      - name: Run
+        working-directory: ${{github.workspace}}/build
+        run: ctest -C ${{ env.BUILD_TYPE }} --rerun-failed --output-on-failure
+      - name: Collect coverage into one XML report
+        run: |
+          gcovr --sonarqube --exclude-throw-branches --gcov-ignore-parse-errors=negative_hits.warn_once_per_file > coverage.xml
+      - name: Run sonar-scanner
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        if: "${{ env.SONAR_TOKEN != '' }}"
+        with:
+          args: >
+            -Dsonar.cfamily.compile-commands=build-wrapper-output/compile_commands.json
+            -Dsonar.coverageReportPaths=coverage.xml
+
+  windows_build:
+    name: Windows Build, Test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }} # Check out the code of the PR head
+      - name: Compile
+        run: |
+          mkdir build
+          cmake -S . -B build -DBUILD_EXAMPLES=ON -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          cmake --build build --config ${{ env.BUILD_TYPE }}
+      - name: Test
+        run: |
+          cd build
+          ctest -C ${{ env.BUILD_TYPE }} --rerun-failed --output-on-failure
+
+  mac_os_build:
+    name: Mac OS Build, Test
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }} # Check out the code of the PR head
+      - name: Compile
+        run: |
+          mkdir build
+          cmake -S . -B build -DBUILD_EXAMPLES=ON -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          cmake --build build --config ${{ env.BUILD_TYPE }}
+      - name: Test
+        run: |
+          cd build
+          ctest -C ${{ env.BUILD_TYPE }} --rerun-failed --output-on-failure
+
+  linux_no_threads_build:
+    name: Ubuntu Build (no std threads)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configure (no threads)
+        run: |
+          cmake -S . -B build \
+            -DCAN_STACK_DISABLE_THREADS=ON \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build (no threads)
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }}
