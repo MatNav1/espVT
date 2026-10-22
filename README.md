@@ -9,6 +9,8 @@ ESP32-S3-Touch-LCD-7B z AgIsoStack++.
 Repozytorium zawiera również firmware osobnego panelu przycisków AUX-N dla
 ESP32U w katalogu `auxn_buttons_esp32`.
 
+![Terminal espVT w obudowie](docs/images/espvt-hardware.jpg)
+
 ## Cel
 
 Docelowo ta aplikacja ma dzialac jako Virtual Terminal Server ISO 11783-6:
@@ -87,6 +89,26 @@ idf.py set-target esp32s3
 idf.py build
 idf.py flash monitor
 ```
+
+## Jeden plik firmware do release
+
+Po zbudowaniu wariantu RS-232 można utworzyć kompletny obraz zawierający
+bootloader, tablicę partycji i aplikację:
+
+```sh
+cmake --build build-rs232 --target merge-bin
+```
+
+Powstanie plik `build-rs232/merged-binary.bin`, gotowy do wgrania od adresu
+`0x0`:
+
+```sh
+esptool.py --chip esp32s3 --port PORT write_flash 0x0 merged-binary.bin
+```
+
+Do GitHub Release należy dołączyć ten jeden plik, nazwany na przykład
+`espVT-v0.1.0-RS232.bin`. Obraz jest przeznaczony dla pamięci flash 16 MB,
+trybu DIO i częstotliwości 80 MHz.
 
 Build zostal zweryfikowany na ESP-IDF 5.5 dla ESP32-S3. Firmware inicjalizuje
 panel RGB 1024x600 zgodnie z parametrami Waveshare, pokazuje logo startowe
