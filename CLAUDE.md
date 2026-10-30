@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-espVT is an experimental (not ISO 11783 certified) ISOBUS Virtual Terminal server (ISO 11783-6) for the Waveshare ESP32-S3-Touch-LCD-7B (1024x600 RGB LCD, GT911 touch, TWAI CAN). It is built on ESP-IDF 6.1 with a vendored, locally modified AgIsoStack++. User-facing docs (README.md, BRINGUP.md, GNSS_NTRIP.md, auxn_buttons_esp32/README.md) are written in Polish. Code and comments are in English.
+espVT is an experimental (not ISO 11783 certified) ISOBUS Virtual Terminal server (ISO 11783-6) for the Waveshare ESP32-S3-Touch-LCD-7B (1024x600 RGB LCD, GT911 touch, TWAI CAN). It is built on ESP-IDF 6.1 with a vendored, locally modified AgIsoStack++. User-facing docs (README.md with an English translation in README.en.md, BRINGUP.md, GNSS_NTRIP.md, auxn_buttons_esp32/README.md) are written in Polish. Code and comments are in English.
 
 The repo has two firmware projects:
 - Root: the VT terminal (ESP-IDF, component in `main/`).

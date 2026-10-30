@@ -1,5 +1,7 @@
 # espVT — ESP32-S3 ISOBUS Virtual Terminal
 
+**Polski** | [English](README.en.md)
+
 > **Status:** experimental, unofficial and not ISO 11783 certified. Do not use
 > it as the sole control or safety device for agricultural machinery.
 
