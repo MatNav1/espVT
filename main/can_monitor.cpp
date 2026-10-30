@@ -70,7 +70,7 @@ std::atomic<std::uint32_t> tx_success_alert_count = 0;
 std::atomic<std::uint32_t> tx_failed_alert_count = 0;
 std::atomic<std::uint32_t> bus_error_alert_count = 0;
 std::atomic<std::uint32_t> arbitration_lost_alert_count = 0;
-volatile std::uint32_t can_rx_edge_count = 0;
+std::atomic<std::uint32_t> can_rx_edge_count = 0;
 std::array<std::atomic<std::uint64_t>, 256> machine_name_by_address{};
 std::array<std::atomic<std::uint32_t>, 256> machine_last_rx_tick{};
 std::array<std::atomic<bool>, 256> machine_online_by_address{};
@@ -221,7 +221,7 @@ void machine_status_task(void *)
                               sizeof(signal_text),
                               "PIN:%d EDGE:%lu TEC:%lu REC:%lu ERR:%lu ARB:%lu MISS:%lu",
                               gpio_get_level(board::CAN_RX),
-                              static_cast<unsigned long>(can_rx_edge_count),
+                              static_cast<unsigned long>(can_rx_edge_count.load()),
                               static_cast<unsigned long>(status.tx_error_counter),
                               static_cast<unsigned long>(status.rx_error_counter),
                               static_cast<unsigned long>(status.bus_error_count),

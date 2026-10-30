@@ -9,6 +9,7 @@
 /sdkconfig
 /sdkconfig.old
 /sdkconfig.rs232
+/sdkconfig.ntrip
 /sdkconfig.*.old
 *.elf
 *.map
@@ -18,6 +19,7 @@
 
 # Local and historical firmware packages
 /releases/
+/delivery/
 /*.zip
 
 # Local credentials or machine-specific overrides

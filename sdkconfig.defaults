@@ -20,3 +20,10 @@ CONFIG_APP_NO_BLOBS=y
 CONFIG_ISOVT_ENABLE_AGISOSTACK=y
 CONFIG_ISOVT_MANUFACTURER_CODE=0
 CONFIG_ISOVT_IDENTITY_NUMBER=1
+# 120 MHz QIO flash: state the S3 HPM choices explicitly, ESP-IDF 6.x treats the
+# implicit "Auto" warnings as errors. Behaviour matches the former auto defaults.
+CONFIG_SPI_FLASH_HPM_ENA=y
+CONFIG_SPI_FLASH_HPM_DC_DISABLE=y
+# The AgIsoStack++ TWAI plugin and can_monitor use the legacy TWAI driver, which
+# ESP-IDF 6.x still ships but marks deprecated.
+CONFIG_TWAI_SUPPRESS_DEPRECATE_WARN=y

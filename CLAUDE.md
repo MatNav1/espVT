@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-espVT is an experimental (not ISO 11783 certified) ISOBUS Virtual Terminal server (ISO 11783-6) for the Waveshare ESP32-S3-Touch-LCD-7B (1024x600 RGB LCD, GT911 touch, TWAI CAN). It is built on ESP-IDF (verified on 5.5) with a vendored, locally modified AgIsoStack++. User-facing docs (README.md, BRINGUP.md, GNSS_NTRIP.md, auxn_buttons_esp32/README.md) are written in Polish. Code and comments are in English.
+espVT is an experimental (not ISO 11783 certified) ISOBUS Virtual Terminal server (ISO 11783-6) for the Waveshare ESP32-S3-Touch-LCD-7B (1024x600 RGB LCD, GT911 touch, TWAI CAN). It is built on ESP-IDF 6.1 with a vendored, locally modified AgIsoStack++. User-facing docs (README.md, BRINGUP.md, GNSS_NTRIP.md, auxn_buttons_esp32/README.md) are written in Polish. Code and comments are in English.
 
 The repo has two firmware projects:
 - Root: the VT terminal (ESP-IDF, component in `main/`).
@@ -12,23 +12,20 @@ The repo has two firmware projects:
 
 ## Build
 
-```sh
-idf.py set-target esp32s3
-idf.py build
-idf.py -p PORT flash monitor
-idf.py menuconfig          # "ESP ISOBUS VT" menu: Kconfig in main/Kconfig.projbuild
-```
-
-The `main` component build requires the macOS `sips` tool (`find_program(... REQUIRED)`). It converts `logo.png` to BMP, and `tools/bmp_to_rgb565.py` then produces the generated `logo_rgb565.hpp` header. The build fails on Linux unless you provide a `sips` substitute.
-
-Build variants are separate build dirs plus layered sdkconfig defaults. `sdkconfig*` (except `*.defaults`) and `build*/` are gitignored:
+`./make_espVT.sh` is the build entry point. It imports the ESP-IDF environment from `IDF_ACTIVATE` (default `~/.espressif/tools/activate_idf_v6.1.sh`) when `idf.py` is not on PATH:
 
 ```sh
-# RS-232 NMEA variant (release variant)
-idf.py -B build-rs232 -D SDKCONFIG="$PWD/sdkconfig.rs232" \
-  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.rs232.defaults" build
-cmake --build build-rs232 --target merge-bin   # -> build-rs232/merged-binary.bin, flash at 0x0
+./make_espVT.sh                    # all variants -> delivery/espVT-<git describe>-<VARIANT>.bin (merged, flash at 0x0)
+./make_espVT.sh rs232 [force]      # one variant: default | rs232 | ntrip; force deletes the build dir first
+./make_espVT.sh flash rs232 /dev/ttyACM0
+./make_espVT.sh menuconfig ntrip   # "ESP ISOBUS VT" menu: Kconfig in main/Kconfig.projbuild
 ```
+
+The firmware builds on ESP-IDF 6.1 (originally verified on 5.5). Two 6.x specifics: `sdkconfig.defaults` sets the S3 flash HPM choices explicitly, and it suppresses the deprecation warning for the legacy TWAI driver (`driver/twai.h`). Both `can_monitor.cpp` and the AgIsoStack++ `twai_plugin.cpp` still use that legacy driver rather than `esp_twai.h`. Driver components (`esp_driver_*`) must be listed in `main/CMakeLists.txt` `REQUIRES`.
+
+The boot logo is generated at build time: `tools/bmp_to_rgb565.py` reads `logo.png` (stdlib PNG decoder) and writes `logo_rgb565.hpp` into the build dir.
+
+Build variants are separate build dirs plus layered sdkconfig defaults (`build/` + `sdkconfig`, `build-rs232/` + `sdkconfig.rs232`, `build-ntrip/` + `sdkconfig.ntrip`). These, and `delivery/`, are gitignored. RS-232 is the release variant.
 
 `sdkconfig.ntrip.defaults` selects the UM982 RTK + NTRIP variant. It turns blobs back on (`CONFIG_APP_NO_BLOBS=n`) because it needs Wi-Fi, while the default config uses `CONFIG_APP_NO_BLOBS=y`. Wi-Fi/NTRIP credentials go into menuconfig only. Never commit a configured `sdkconfig`.
 

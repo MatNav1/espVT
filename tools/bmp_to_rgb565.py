@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Convert a BMP logo to a cropped RGB565 C++ header using only stdlib."""
+"""Convert a PNG or BMP logo to a cropped RGB565 C++ header using only stdlib."""
 
 from __future__ import annotations
 
 import argparse
 import struct
+import zlib
 from pathlib import Path
 
 
@@ -43,6 +44,66 @@ def read_bmp(path: Path) -> tuple[int, int, list[tuple[int, int, int]]]:
             pixel_start = row_start + x * bytes_per_pixel
             blue, green, red = data[pixel_start : pixel_start + 3]
             pixels.append((red, green, blue))
+    return width, height, pixels
+
+
+def read_png(path: Path) -> tuple[int, int, list[tuple[int, int, int]]]:
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("Expected a PNG file")
+
+    position = 8
+    header = b""
+    compressed = bytearray()
+    while position < len(data):
+        length, chunk_type = struct.unpack_from(">I4s", data, position)
+        chunk = data[position + 8 : position + 8 + length]
+        if chunk_type == b"IHDR":
+            header = chunk
+        elif chunk_type == b"IDAT":
+            compressed += chunk
+        elif chunk_type == b"IEND":
+            break
+        position += 12 + length
+
+    width, height, bit_depth, colour_type, _, _, interlace = struct.unpack(">IIBBBBB", header)
+    channels = {2: 3, 6: 4}.get(colour_type)
+    if bit_depth != 8 or channels is None or interlace != 0:
+        raise ValueError("Only non-interlaced 8-bit RGB or RGBA PNG input is supported")
+
+    raw = zlib.decompress(bytes(compressed))
+    stride = width * channels
+    previous = bytearray(stride)
+    pixels: list[tuple[int, int, int]] = []
+    for y in range(height):
+        start = y * (stride + 1)
+        filter_type = raw[start]
+        row = bytearray(raw[start + 1 : start + 1 + stride])
+        for i in range(stride):
+            left = row[i - channels] if i >= channels else 0
+            up = previous[i]
+            upper_left = previous[i - channels] if i >= channels else 0
+            if filter_type == 1:
+                row[i] = (row[i] + left) & 0xFF
+            elif filter_type == 2:
+                row[i] = (row[i] + up) & 0xFF
+            elif filter_type == 3:
+                row[i] = (row[i] + ((left + up) >> 1)) & 0xFF
+            elif filter_type == 4:
+                estimate = left + up - upper_left
+                distances = (abs(estimate - left), abs(estimate - up), abs(estimate - upper_left))
+                predictor = (left, up, upper_left)[distances.index(min(distances))]
+                row[i] = (row[i] + predictor) & 0xFF
+        for x in range(width):
+            red, green, blue = row[x * channels : x * channels + 3]
+            if channels == 4:
+                # Composite transparent areas onto white so they are cropped like the BMP path.
+                alpha = row[x * channels + 3]
+                red, green, blue = (
+                    (value * alpha + 255 * (255 - alpha)) // 255 for value in (red, green, blue)
+                )
+            pixels.append((red, green, blue))
+        previous = row
     return width, height, pixels
 
 
@@ -123,7 +184,8 @@ def main() -> None:
     parser.add_argument("--padding", type=int, default=12)
     args = parser.parse_args()
 
-    width, height, pixels = read_bmp(args.input)
+    reader = read_png if args.input.read_bytes()[:4] == b"\x89PNG" else read_bmp
+    width, height, pixels = reader(args.input)
     width, height, pixels = crop_to_content(width, height, pixels, args.padding)
     width, height, pixels = resize(width, height, pixels, args.max_width, args.max_height)
     args.output.parent.mkdir(parents=True, exist_ok=True)
