@@ -1690,10 +1690,10 @@ void add_screen_target(std::vector<ScreenRect> &targets,
                        vt_scene_renderer::TerminalAction action)
 {
     targets.push_back({
-        .x = lcd_panel::area_x() + x,
-        .y = lcd_panel::area_y() + y,
-        .width = width,
-        .height = height,
+        .x = lcd_panel::to_lcd_x(x),
+        .y = lcd_panel::to_lcd_y(y),
+        .width = lcd_panel::to_lcd_x(x + width) - lcd_panel::to_lcd_x(x),
+        .height = lcd_panel::to_lcd_y(y + height) - lcd_panel::to_lcd_y(y),
         .target = {
             .kind = vt_scene_renderer::HitKind::Terminal,
             .terminal_action = action,
@@ -1995,10 +1995,10 @@ void render_machine_page(
         lcd_panel::draw_text(LEFT_INFO_WIDTH + 46, y + 12, 2, title, 0x1082);
         lcd_panel::draw_text(LEFT_INFO_WIDTH + 46, y + 38, 2, detail, 0x52AA);
         targets.push_back({
-            .x = lcd_panel::area_x() + LEFT_INFO_WIDTH + 28,
-            .y = lcd_panel::area_y() + y,
-            .width = 760,
-            .height = 66,
+            .x = lcd_panel::to_lcd_x(LEFT_INFO_WIDTH + 28),
+            .y = lcd_panel::to_lcd_y(y),
+            .width = lcd_panel::to_lcd_x(LEFT_INFO_WIDTH + 28 + 760) - lcd_panel::to_lcd_x(LEFT_INFO_WIDTH + 28),
+            .height = lcd_panel::to_lcd_y(y + 66) - lcd_panel::to_lcd_y(y),
             .target = {
                 .kind = vt_scene_renderer::HitKind::WorkingSet,
                 .working_set_name = name,
@@ -2483,10 +2483,10 @@ void add_editor_target(std::vector<ScreenRect> &targets,
                        std::uint16_t index = 0)
 {
     targets.push_back({
-        .x = lcd_panel::area_x() + x,
-        .y = lcd_panel::area_y() + y,
-        .width = width,
-        .height = height,
+        .x = lcd_panel::to_lcd_x(x),
+        .y = lcd_panel::to_lcd_y(y),
+        .width = lcd_panel::to_lcd_x(x + width) - lcd_panel::to_lcd_x(x),
+        .height = lcd_panel::to_lcd_y(y + height) - lcd_panel::to_lcd_y(y),
         .target = {
             .kind = vt_scene_renderer::HitKind::Editor,
             .editor_action = action,
@@ -2720,7 +2720,7 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
         }
         vt_view::set_working_set_visible(true);
         std::vector<ScreenRect> next_targets;
-        if constexpr ((board::UI_WIDTH != board::LCD_WIDTH) || (board::UI_HEIGHT != board::LCD_HEIGHT))
+        if constexpr ((board::UI_SCREEN_WIDTH != board::LCD_WIDTH) || (board::UI_SCREEN_HEIGHT != board::LCD_HEIGHT))
         {
             lcd_panel::fill(CHROME_DARK);
         }

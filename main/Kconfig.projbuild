@@ -39,16 +39,16 @@ if ISOVT_BOARD_GUITION_JC8012P4A1C
 
 choice ISOVT_DISPLAY_ROTATION
     prompt "Landscape orientation"
-    default ISOVT_DISPLAY_ROTATION_90
+    default ISOVT_DISPLAY_ROTATION_270
     help
         The 800x1280 panel is mounted in landscape. Rotation is done by the
         PPA when a frame is presented; touch coordinates are rotated to match.
 
 config ISOVT_DISPLAY_ROTATION_90
-    bool "90 degrees"
+    bool "90 degrees (front camera at the bottom edge)"
 
 config ISOVT_DISPLAY_ROTATION_270
-    bool "270 degrees"
+    bool "270 degrees (front camera at the top edge)"
 
 endchoice
 

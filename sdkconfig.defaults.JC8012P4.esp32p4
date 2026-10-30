@@ -1,4 +1,6 @@
 CONFIG_ISOVT_BOARD_GUITION_JC8012P4A1C=y
+# Landscape with the front camera at the top edge.
+CONFIG_ISOVT_DISPLAY_ROTATION_270=y
 # External 3.3 V CAN transceiver on the FPC3 expansion connector.
 CONFIG_ISOVT_CAN_TX_GPIO=4
 CONFIG_ISOVT_CAN_RX_GPIO=5

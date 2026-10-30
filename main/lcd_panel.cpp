@@ -32,6 +32,8 @@ struct ViewTransform
     int area_y = 0;
     int area_width = board::LCD_WIDTH;
     int area_height = board::LCD_HEIGHT;
+    int area_scale_numerator = 1;
+    int area_scale_denominator = 1;
     int offset_x = 0;
     int offset_y = 0;
     int scale_numerator = 1;
@@ -135,14 +137,16 @@ std::uint16_t decode_character(std::uint8_t value, lcd_panel::TextEncoding encod
 
 int transform_x(int x)
 {
-    return view_transform.area_x + view_transform.offset_x +
-           (x * view_transform.scale_numerator) / view_transform.scale_denominator;
+    const int area_relative = view_transform.offset_x + (x * view_transform.scale_numerator) / view_transform.scale_denominator;
+    return view_transform.area_x +
+           (area_relative * view_transform.area_scale_numerator) / view_transform.area_scale_denominator;
 }
 
 int transform_y(int y)
 {
-    return view_transform.area_y + view_transform.offset_y +
-           (y * view_transform.scale_y_numerator) / view_transform.scale_y_denominator;
+    const int area_relative = view_transform.offset_y + (y * view_transform.scale_y_numerator) / view_transform.scale_y_denominator;
+    return view_transform.area_y +
+           (area_relative * view_transform.area_scale_numerator) / view_transform.area_scale_denominator;
 }
 
 const std::uint8_t *glyph_for(char character)
@@ -468,10 +472,10 @@ void reset_view_transform()
 
 void set_clip_rect(int x, int y, int width, int height)
 {
-    view_transform.clip_x = view_transform.area_x + x;
-    view_transform.clip_y = view_transform.area_y + y;
-    view_transform.clip_width = std::max(0, width);
-    view_transform.clip_height = std::max(0, height);
+    view_transform.clip_x = to_lcd_x(x);
+    view_transform.clip_y = to_lcd_y(y);
+    view_transform.clip_width = std::max(0, to_lcd_x(x + width) - view_transform.clip_x);
+    view_transform.clip_height = std::max(0, to_lcd_y(y + height) - view_transform.clip_y);
 }
 
 void reset_clip_rect()
@@ -488,6 +492,8 @@ void use_full_screen()
     view_transform.area_y = 0;
     view_transform.area_width = board::LCD_WIDTH;
     view_transform.area_height = board::LCD_HEIGHT;
+    view_transform.area_scale_numerator = 1;
+    view_transform.area_scale_denominator = 1;
     reset_view_transform();
     reset_clip_rect();
 }
@@ -496,20 +502,22 @@ void use_ui_area()
 {
     view_transform.area_x = board::UI_X;
     view_transform.area_y = board::UI_Y;
-    view_transform.area_width = board::UI_WIDTH;
-    view_transform.area_height = board::UI_HEIGHT;
+    view_transform.area_width = board::UI_SCREEN_WIDTH;
+    view_transform.area_height = board::UI_SCREEN_HEIGHT;
+    view_transform.area_scale_numerator = board::UI_SCALE_NUMERATOR;
+    view_transform.area_scale_denominator = board::UI_SCALE_DENOMINATOR;
     reset_view_transform();
     reset_clip_rect();
 }
 
-int area_x()
+int to_lcd_x(int x)
 {
-    return view_transform.area_x;
+    return view_transform.area_x + (x * view_transform.area_scale_numerator) / view_transform.area_scale_denominator;
 }
 
-int area_y()
+int to_lcd_y(int y)
 {
-    return view_transform.area_y;
+    return view_transform.area_y + (y * view_transform.area_scale_numerator) / view_transform.area_scale_denominator;
 }
 
 esp_err_t present()
@@ -549,8 +557,13 @@ esp_err_t fill_rect(int x, int y, int width, int height, std::uint16_t color)
                          color);
 }
 
-esp_err_t draw_rgb565(int x, int y, int width, int height, const std::uint16_t *pixels)
+esp_err_t draw_rgb565(int x, int y, int width, int height, const std::uint16_t *pixels,
+                      int source_width, int source_height)
 {
+    // The image fills the logical width x height rectangle; its pixel data may
+    // have a different resolution (source_width x source_height, 0 = same).
+    source_width = source_width > 0 ? source_width : width;
+    source_height = source_height > 0 ? source_height : height;
     if (!is_ready() || !frame_in_progress)
     {
         return ESP_ERR_INVALID_STATE;
@@ -578,23 +591,23 @@ esp_err_t draw_rgb565(int x, int y, int width, int height, const std::uint16_t *
     for (int row = y_start; row < y_end; ++row)
     {
         std::uint16_t *destination = frame + static_cast<std::size_t>(row) * board::LCD_WIDTH + x_start;
-        const int source_y = std::clamp(((row - transformed_y) * height) / std::max(1, transformed_height), 0, height - 1);
-        if ((transformed_width == width) && (x_start == transformed_x) && (x_end == transformed_right))
+        const int source_y = std::clamp(((row - transformed_y) * source_height) / std::max(1, transformed_height), 0, source_height - 1);
+        if ((transformed_width == source_width) && (x_start == transformed_x) && (x_end == transformed_right))
         {
             std::memcpy(destination,
-                        pixels + static_cast<std::size_t>(source_y) * width,
-                        static_cast<std::size_t>(width) * sizeof(std::uint16_t));
+                        pixels + static_cast<std::size_t>(source_y) * source_width,
+                        static_cast<std::size_t>(source_width) * sizeof(std::uint16_t));
             continue;
         }
         std::uint32_t source_x_fixed = static_cast<std::uint32_t>(
-            (static_cast<std::uint64_t>(x_start - transformed_x) * width << 16U) /
+            (static_cast<std::uint64_t>(x_start - transformed_x) * source_width << 16U) /
             std::max(1, transformed_width));
         const std::uint32_t source_x_step = static_cast<std::uint32_t>(
-            (static_cast<std::uint64_t>(width) << 16U) / std::max(1, transformed_width));
+            (static_cast<std::uint64_t>(source_width) << 16U) / std::max(1, transformed_width));
         for (int column = x_start; column < x_end; ++column)
         {
-            const int source_x = std::min<int>(width - 1, source_x_fixed >> 16U);
-            *destination++ = pixels[static_cast<std::size_t>(source_y) * width + source_x];
+            const int source_x = std::min<int>(source_width - 1, source_x_fixed >> 16U);
+            *destination++ = pixels[static_cast<std::size_t>(source_y) * source_width + source_x];
             source_x_fixed += source_x_step;
         }
     }
@@ -612,8 +625,9 @@ void draw_line(int x0, int y0, int x1, int y1, std::uint16_t color, int thicknes
     y0 = transform_y(y0);
     x1 = transform_x(x1);
     y1 = transform_y(y1);
-    thickness = std::max(1, (thickness * view_transform.scale_numerator + view_transform.scale_denominator - 1) /
-                              view_transform.scale_denominator);
+    const int numerator = view_transform.scale_numerator * view_transform.area_scale_numerator;
+    const int denominator = view_transform.scale_denominator * view_transform.area_scale_denominator;
+    thickness = std::max(1, (thickness * numerator + denominator - 1) / denominator);
 
     const int delta_x = std::abs(x1 - x0);
     const int delta_y = -std::abs(y1 - y0);
