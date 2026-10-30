@@ -45,11 +45,16 @@ UART/USB plytki albo przelacz EXIO5 w tryb USB zgodnie z dokumentacja Waveshare.
   uzywany poziomo jako 1280x800; obrot wykonuje sprzetowo PPA,
 - dotyk GSL3680 po I2C (SDA GPIO7, SCL GPIO8, RST GPIO22, INT GPIO21),
 - podswietlenie GPIO23, reset LCD GPIO27,
-- plytka nie ma transceivera CAN: zewnetrzny transceiver 3,3 V (np. SN65HVD230)
-  podlacza sie do zlacza FPC3, domyslnie TX GPIO4, RX GPIO5, zasilanie VDDA/GND.
+- plytka nie ma transceivera CAN. Potrzebny jest zewnetrzny transceiver z zasilaniem
+  VCC 5 V i pinem VIO 3,3 V, np. TCAN1044AV-Q1 (TI) albo TJA1051T/3 lub TJA1462
+  (NXP); piny magistrali powinny wytrzymac zwarcie do zasilania 12/24 V.
+  VCC 5 V pochodzi z wlasnej przetwornicy 12/24 V -> 5 V (FPC3/FPC4 daja tylko
+  3,3 V), VIO 3,3 V z VDDA na FPC3 (piny 13/14), TXD/RXD na GPIO4/GPIO5
+  (FPC3 piny 8/7). FPC3 to 14-pinowe zlacze ZIF 0,5 mm (styki dolne), pasuje
+  Wurth 68711414522.
 
-Menu terminala i ekran oczekiwania sa rysowane 1:1 w wysrodkowanym oknie
-1024x600; obszar VT wykorzystuje pelna wysokosc 800 pikseli. Dzwiek (ES8311)
+Menu terminala i ekran oczekiwania (uklad 1024x600) sa skalowane 5/4 do 1280x750;
+obszar VT wykorzystuje pelna wysokosc 800 pikseli. Kamera jest u gory ekranu. Dzwiek (ES8311)
 i GNSS nie sa jeszcze przeniesione na te plytke.
 
 ## Obudowa do druku 3D

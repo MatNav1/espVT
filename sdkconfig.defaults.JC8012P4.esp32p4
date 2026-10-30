@@ -1,7 +1,7 @@
 CONFIG_ISOVT_BOARD_GUITION_JC8012P4A1C=y
 # Landscape with the front camera at the top edge.
 CONFIG_ISOVT_DISPLAY_ROTATION_270=y
-# External 3.3 V CAN transceiver on the FPC3 expansion connector.
+# External CAN transceiver (5 V VCC, 3.3 V VIO) on FPC3 pins 8/7.
 CONFIG_ISOVT_CAN_TX_GPIO=4
 CONFIG_ISOVT_CAN_RX_GPIO=5
 # The board has an ES8311 codec instead of a MAX98357A; audio is not ported yet.
