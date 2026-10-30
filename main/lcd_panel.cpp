@@ -2,6 +2,7 @@
 
 #include "board_pins.hpp"
 #include "lcd_backend.hpp"
+#include "vt_font.hpp"
 
 #include <algorithm>
 #include <array>
@@ -18,12 +19,6 @@ namespace
 {
 constexpr char TAG[] = "lcd";
 constexpr std::size_t FRAME_PIXELS = static_cast<std::size_t>(board::LCD_WIDTH) * board::LCD_HEIGHT;
-
-extern "C"
-{
-extern const std::uint8_t vt_font_asset_start[] asm("_binary_vt_font_roboto_mono_bin_start");
-extern const std::uint8_t vt_font_asset_end[] asm("_binary_vt_font_roboto_mono_bin_end");
-}
 
 SemaphoreHandle_t frame_mutex = nullptr;
 std::uint16_t *frame = nullptr;
@@ -50,97 +45,6 @@ struct ViewTransform
 };
 
 ViewTransform view_transform;
-
-struct FontAssetSize
-{
-    std::uint16_t width = 0;
-    std::uint16_t height = 0;
-    std::uint32_t offset = 0;
-    std::uint32_t stride = 0;
-};
-
-std::uint16_t read_u16(const std::uint8_t *data)
-{
-    return static_cast<std::uint16_t>(data[0]) |
-           (static_cast<std::uint16_t>(data[1]) << 8U);
-}
-
-std::uint32_t read_u32(const std::uint8_t *data)
-{
-    return static_cast<std::uint32_t>(data[0]) |
-           (static_cast<std::uint32_t>(data[1]) << 8U) |
-           (static_cast<std::uint32_t>(data[2]) << 16U) |
-           (static_cast<std::uint32_t>(data[3]) << 24U);
-}
-
-bool font_asset_valid()
-{
-    return ((vt_font_asset_end - vt_font_asset_start) >= 12) &&
-           (std::memcmp(vt_font_asset_start, "VTF1", 4) == 0) &&
-           (read_u16(vt_font_asset_start + 4) == 1);
-}
-
-int font_glyph_index(std::uint16_t codepoint)
-{
-    if (!font_asset_valid())
-    {
-        return -1;
-    }
-    const int glyph_count = read_u16(vt_font_asset_start + 6);
-    const std::uint8_t *codepoints = vt_font_asset_start + 12;
-    int low = 0;
-    int high = glyph_count - 1;
-    while (low <= high)
-    {
-        const int middle = low + (high - low) / 2;
-        const std::uint16_t value = read_u16(codepoints + middle * 2);
-        if (value == codepoint)
-        {
-            return middle;
-        }
-        if (value < codepoint)
-        {
-            low = middle + 1;
-        }
-        else
-        {
-            high = middle - 1;
-        }
-    }
-    return -1;
-}
-
-bool select_font_size(int requested_width, int requested_height, FontAssetSize &selected)
-{
-    if (!font_asset_valid())
-    {
-        return false;
-    }
-    const int glyph_count = read_u16(vt_font_asset_start + 6);
-    const int size_count = read_u16(vt_font_asset_start + 8);
-    const std::uint8_t *entries = vt_font_asset_start + 12 + glyph_count * 2;
-    int best_score = 0x7FFFFFFF;
-    for (int index = 0; index < size_count; ++index)
-    {
-        const std::uint8_t *entry = entries + index * 12;
-        FontAssetSize candidate = {
-            .width = read_u16(entry),
-            .height = read_u16(entry + 2),
-            .offset = read_u32(entry + 4),
-            .stride = read_u32(entry + 8),
-        };
-        const int score = std::abs(static_cast<int>(candidate.width) - requested_width) * 2 +
-                          std::abs(static_cast<int>(candidate.height) - requested_height);
-        if (score < best_score)
-        {
-            best_score = score;
-            selected = candidate;
-        }
-    }
-    return (selected.width > 0) &&
-           (selected.height > 0) &&
-           (selected.offset + selected.stride <= static_cast<std::uint32_t>(vt_font_asset_end - vt_font_asset_start));
-}
 
 std::uint16_t decode_character(std::uint8_t value, lcd_panel::TextEncoding encoding)
 {
@@ -333,14 +237,14 @@ std::uint16_t blend_rgb565(std::uint16_t background, std::uint16_t foreground, s
     {
         return background;
     }
-    if (alpha >= 3)
+    if (alpha == 255)
     {
         return foreground;
     }
-    const int inverse = 3 - alpha;
-    const int red = (((background >> 11U) & 0x1FU) * inverse + ((foreground >> 11U) & 0x1FU) * alpha + 1) / 3;
-    const int green = (((background >> 5U) & 0x3FU) * inverse + ((foreground >> 5U) & 0x3FU) * alpha + 1) / 3;
-    const int blue = ((background & 0x1FU) * inverse + (foreground & 0x1FU) * alpha + 1) / 3;
+    const int inverse = 255 - alpha;
+    const int red = (((background >> 11U) & 0x1FU) * inverse + ((foreground >> 11U) & 0x1FU) * alpha + 127) / 255;
+    const int green = (((background >> 5U) & 0x3FU) * inverse + ((foreground >> 5U) & 0x3FU) * alpha + 127) / 255;
+    const int blue = ((background & 0x1FU) * inverse + (foreground & 0x1FU) * alpha + 127) / 255;
     return static_cast<std::uint16_t>((red << 11U) | (green << 5U) | blue);
 }
 
@@ -365,73 +269,51 @@ void fill_rgb565(std::uint16_t *destination, std::size_t count, std::uint16_t co
     }
 }
 
-bool draw_asset_glyph(int x,
-                      int y,
-                      int character_width,
-                      int character_height,
-                      std::uint16_t codepoint,
-                      std::uint16_t color,
-                      bool bold,
-                      const FontAssetSize &font_size)
+// Draws one character cell. The glyph is rasterized at the physical size of the
+// transformed cell, so scaled VT content stays sharp.
+bool draw_glyph(int x, int y, int character_width, int character_height,
+                std::uint16_t codepoint, std::uint16_t color, bool bold)
 {
-    const int glyph_index = font_glyph_index(codepoint);
-    if (glyph_index < 0)
+    const int left = transform_x(x);
+    const int top = transform_y(y);
+    const int width = transform_x(x + character_width) - left;
+    const int height = transform_y(y + character_height) - top;
+    if ((width <= 0) || (height <= 0))
+    {
+        return true;
+    }
+    const vt_font::Glyph *glyph = vt_font::get(codepoint, width, height);
+    if (glyph == nullptr)
     {
         return false;
     }
 
-    const std::uint64_t glyph_offset = static_cast<std::uint64_t>(font_size.offset) +
-                                       static_cast<std::uint64_t>(glyph_index) * font_size.stride;
-    if (glyph_offset + font_size.stride > static_cast<std::uint64_t>(vt_font_asset_end - vt_font_asset_start))
+    const int bold_extra = bold ? std::max(1, transform_x(x + 1) - transform_x(x)) : 0;
+    const int clip_left = std::max(0, view_transform.clip_x);
+    const int clip_top = std::max(0, view_transform.clip_y);
+    const int clip_right = std::min(board::LCD_WIDTH, view_transform.clip_x + view_transform.clip_width);
+    const int clip_bottom = std::min(board::LCD_HEIGHT, view_transform.clip_y + view_transform.clip_height);
+    for (int row = std::max(0, clip_top - top); row < height; ++row)
     {
-        return false;
-    }
-    const std::uint8_t *glyph = vt_font_asset_start + glyph_offset;
-    for (int row = 0; row < character_height; ++row)
-    {
-        const int physical_top = std::max({ 0, transform_y(y + row), view_transform.clip_y });
-        const int physical_bottom = std::min({ board::LCD_HEIGHT,
-                                               transform_y(y + row + 1),
-                                               view_transform.clip_y + view_transform.clip_height });
-        if (physical_top >= physical_bottom)
+        const int physical_y = top + row;
+        if (physical_y >= clip_bottom)
         {
-            continue;
+            break;
         }
-        const int source_y = std::min<int>(font_size.height - 1, row * font_size.height / character_height);
-        for (int column = 0; column < character_width; ++column)
+        const std::uint8_t *coverage = glyph->alpha + static_cast<std::size_t>(row) * width;
+        std::uint16_t *line = frame + static_cast<std::size_t>(physical_y) * board::LCD_WIDTH;
+        for (int column = 0; column < width; ++column)
         {
-            const int source_x = std::min<int>(font_size.width - 1, column * font_size.width / character_width);
-            const int source_index = source_y * font_size.width + source_x;
-            const std::uint8_t alpha = static_cast<std::uint8_t>((glyph[source_index / 4] >> ((source_index % 4) * 2)) & 0x03U);
+            const std::uint8_t alpha = coverage[column];
             if (alpha == 0)
             {
                 continue;
             }
-            const int logical_right = x + column + ((bold && (column + 1 < character_width)) ? 2 : 1);
-            const int physical_left = std::max({ 0, transform_x(x + column), view_transform.clip_x });
-            const int physical_right = std::min({ board::LCD_WIDTH,
-                                                  transform_x(logical_right),
-                                                  view_transform.clip_x + view_transform.clip_width });
-            if (physical_left >= physical_right)
+            const int physical_left = std::max(clip_left, left + column);
+            const int physical_right = std::min(clip_right, left + column + 1 + bold_extra);
+            for (int physical_x = physical_left; physical_x < physical_right; ++physical_x)
             {
-                continue;
-            }
-            for (int physical_y = physical_top; physical_y < physical_bottom; ++physical_y)
-            {
-                auto *destination = frame +
-                                    static_cast<std::size_t>(physical_y) * board::LCD_WIDTH + physical_left;
-                if (alpha >= 3)
-                {
-                    std::fill_n(destination, physical_right - physical_left, color);
-                }
-                else
-                {
-                    for (int physical_x = physical_left; physical_x < physical_right; ++physical_x)
-                    {
-                        *destination = blend_rgb565(*destination, color, alpha);
-                        ++destination;
-                    }
-                }
+                line[physical_x] = blend_rgb565(line[physical_x], color, alpha);
             }
         }
     }
@@ -757,14 +639,11 @@ void draw_text_sized(int x,
     }
 
     int cursor_x = x;
-    FontAssetSize font_size;
-    const bool have_asset_font = select_font_size(character_width, character_height, font_size);
     for (const auto *character = reinterpret_cast<const unsigned char *>(text); *character != '\0'; ++character)
     {
         const std::uint16_t codepoint = decode_character(*character, encoding);
-        if (have_asset_font &&
-            (draw_asset_glyph(cursor_x, y, character_width, character_height, codepoint, color, bold, font_size) ||
-             draw_asset_glyph(cursor_x, y, character_width, character_height, '?', color, bold, font_size)))
+        if (draw_glyph(cursor_x, y, character_width, character_height, codepoint, color, bold) ||
+            draw_glyph(cursor_x, y, character_width, character_height, '?', color, bold))
         {
             cursor_x += character_width;
             continue;

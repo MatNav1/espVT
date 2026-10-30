@@ -33,7 +33,7 @@ The boot logo is generated at build time: `tools/bmp_to_rgb565.py` reads `logo.p
 
 `sdkconfig.defaults.ntrip` selects the UM982 RTK + NTRIP variant. It turns blobs back on (`CONFIG_APP_NO_BLOBS=n`) because it needs Wi-Fi, while the default config uses `CONFIG_APP_NO_BLOBS=y`. Wi-Fi/NTRIP credentials go into menuconfig only. Never commit a configured `sdkconfig`.
 
-`main/vt_font_roboto_mono.bin` is a committed generated asset, embedded through `EMBED_FILES`. To regenerate it, use `tools/generate_vt_font.py` (needs Pillow) with `assets/fonts/RobotoMono-Regular.ttf`.
+Text is rendered at runtime: `assets/fonts/RobotoMono-Regular.ttf` is embedded through `EMBED_FILES` and rasterized by `main/vt_font.cpp` with `third_party/stb/stb_truetype.h` (implementation in `main/stb_truetype_impl.c`) at the exact physical cell size, cached in PSRAM (2 MB budget). Cells are stretched to the requested width, so all ISO 11783-6 font sizes including the square ones render natively. `lcd_panel::draw_text(x, y, scale, …)` uses 6x10 cells per scale step positioned so the capitals cover the old 5x7 box.
 
 AUX-N panel: `cd auxn_buttons_esp32 && pio run -t upload`. Button count and pins come only from `config/buttons.json`. The pre-build script `tools/generate_config.py` regenerates `src/generated/*`, which includes the AUX-N object pool.
 
