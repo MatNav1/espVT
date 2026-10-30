@@ -2195,9 +2195,9 @@ void render_aux_page(std::vector<ScreenRect> &targets,
 
     char header[64];
     std::snprintf(header, sizeof(header), tr(Txt::AuxFunctions), static_cast<unsigned>(catalog.functions.size()));
-    lcd_panel::draw_text(LEFT_INFO_WIDTH + 28, 90, 2, header, 0x1082);
+    lcd_panel::draw_text(LEFT_INFO_WIDTH + 28, 100, 2, header, 0x1082);
     std::snprintf(header, sizeof(header), tr(Txt::AuxInputs), static_cast<unsigned>(catalog.inputs.size()));
-    lcd_panel::draw_text(LEFT_INFO_WIDTH + 420, 90, 2, header, 0x1082);
+    lcd_panel::draw_text(LEFT_INFO_WIDTH + 420, 100, 2, header, 0x1082);
     const std::size_t function_page_count = std::max<std::size_t>(1, (catalog.functions.size() + 4U) / 5U);
     const std::size_t input_page_count = std::max<std::size_t>(1, (catalog.inputs.size() + 4U) / 5U);
     if (aux_function_page >= function_page_count)
