@@ -19,6 +19,10 @@ extern const std::uint8_t roboto_mono_start[] asm("_binary_RobotoMono_Regular_tt
 namespace
 {
 constexpr char TAG[] = "vt_font";
+// The cell spans this much of the em square above and below the baseline, enough
+// for accented capitals (A with diaeresis, Cyrillic short I) and descenders.
+constexpr float CELL_ASCENT_EM = 0.92F;
+constexpr float CELL_DESCENT_EM = 0.23F;
 // Rendered glyphs are kept until the cache exceeds this size, then it starts over.
 constexpr std::size_t CACHE_BUDGET_BYTES = 2 * 1024 * 1024;
 constexpr int MAXIMUM_CELL_SIZE = 1024;
@@ -35,8 +39,6 @@ std::size_t cache_bytes = 0;
 stbtt_fontinfo font;
 bool font_ready = false;
 bool font_failed = false;
-int ascent = 0;
-int descent = 0;
 
 bool init_font()
 {
@@ -47,12 +49,7 @@ bool init_font()
     const int offset = stbtt_GetFontOffsetForIndex(roboto_mono_start, 0);
     font_ready = (offset >= 0) && (stbtt_InitFont(&font, roboto_mono_start, offset) != 0);
     font_failed = !font_ready;
-    if (font_ready)
-    {
-        int line_gap = 0;
-        stbtt_GetFontVMetrics(&font, &ascent, &descent, &line_gap);
-    }
-    else
+    if (!font_ready)
     {
         ESP_LOGE(TAG, "Embedded Roboto Mono could not be parsed");
     }
@@ -69,9 +66,9 @@ void clear_cache()
     cache_bytes = 0;
 }
 
-// The em square is as high as the cell and the glyph is centered between the
-// font's ascender and descender; the advance is stretched to the cell width, so
-// square ISO 11783 font sizes get wide characters instead of narrow centered ones.
+// The cell height covers CELL_ASCENT_EM + CELL_DESCENT_EM of the em square, so
+// nothing is clipped; the advance is stretched to the cell width, so square
+// ISO 11783 font sizes get wide characters instead of narrow centered ones.
 CachedGlyph *render(int glyph_index, int width, int height)
 {
     const std::size_t pixels = static_cast<std::size_t>(width) * height;
@@ -88,9 +85,10 @@ CachedGlyph *render(int glyph_index, int width, int height)
     int advance = 0;
     int left_bearing = 0;
     stbtt_GetGlyphHMetrics(&font, glyph_index, &advance, &left_bearing);
-    const float scale_y = stbtt_ScaleForMappingEmToPixels(&font, static_cast<float>(height));
+    const float em = height / (CELL_ASCENT_EM + CELL_DESCENT_EM);
+    const float scale_y = stbtt_ScaleForMappingEmToPixels(&font, em);
     const float scale_x = (advance > 0) ? static_cast<float>(width) / advance : scale_y;
-    const float baseline = height / 2.0F + (ascent + descent) * scale_y / 2.0F;
+    const float baseline = CELL_ASCENT_EM * em;
     const float baseline_floor = std::floor(baseline);
 
     int x0 = 0;

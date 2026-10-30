@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui_text.hpp"
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -175,7 +177,7 @@ void set_terminal_settings(const TerminalSettings &settings);
 TerminalSettings get_terminal_settings();
 void set_metric_units(bool metric);
 bool get_metric_units();
-void set_notice(const char *text);
+void set_notice(ui_text::Id text);
 void open_input_editor(InputEditorKind kind,
                        std::uint16_t object_id,
                        const std::string &initial_value,

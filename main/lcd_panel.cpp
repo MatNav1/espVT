@@ -46,6 +46,46 @@ struct ViewTransform
 
 ViewTransform view_transform;
 
+// Reads one UTF-8 sequence and advances text past it. Malformed input yields '?'.
+std::uint16_t next_utf8_codepoint(const unsigned char *&text)
+{
+    const unsigned char lead = *text++;
+    if (lead < 0x80U)
+    {
+        return lead;
+    }
+    int continuation = 0;
+    std::uint32_t codepoint = 0;
+    if ((lead & 0xE0U) == 0xC0U)
+    {
+        continuation = 1;
+        codepoint = lead & 0x1FU;
+    }
+    else if ((lead & 0xF0U) == 0xE0U)
+    {
+        continuation = 2;
+        codepoint = lead & 0x0FU;
+    }
+    else if ((lead & 0xF8U) == 0xF0U)
+    {
+        continuation = 3;
+        codepoint = lead & 0x07U;
+    }
+    else
+    {
+        return '?';
+    }
+    for (int index = 0; index < continuation; ++index)
+    {
+        if ((*text & 0xC0U) != 0x80U)
+        {
+            return '?';
+        }
+        codepoint = (codepoint << 6U) | (*text++ & 0x3FU);
+    }
+    return codepoint <= 0xFFFFU ? static_cast<std::uint16_t>(codepoint) : '?';
+}
+
 std::uint16_t decode_character(std::uint8_t value, lcd_panel::TextEncoding encoding)
 {
     static constexpr std::uint16_t ISO_8859_2_HIGH[96] = {
@@ -615,10 +655,12 @@ void draw_text(int x, int y, int scale, const char *text, std::uint16_t color)
         return;
     }
 
-    // Roboto Mono cells of 6x10 per scale step; their capitals cover the 5x7 box
-    // of the former bitmap font at (x, y), so layouts keep their positions.
-    const int capital_top = (5 * scale + 1) / 3;
-    draw_text_sized(x, y - capital_top, 6 * scale, 10 * scale, text, color);
+    // Cells 6 px wide per scale step and tall enough for accents and descenders;
+    // the capitals cover the 5x7 box of the former bitmap font at (x, y), so
+    // layouts keep their positions.
+    const int cell_height = (23 * scale + 1) / 2;
+    const int capital_top = (cell_height * 182 + 500) / 1000;
+    draw_text_sized(x, y - capital_top, 6 * scale, cell_height, text, color, false, false, false, TextEncoding::UTF8);
 }
 
 void draw_text_sized(int x,
@@ -639,9 +681,13 @@ void draw_text_sized(int x,
     }
 
     int cursor_x = x;
-    for (const auto *character = reinterpret_cast<const unsigned char *>(text); *character != '\0'; ++character)
+    int character_count = 0;
+    for (const auto *character = reinterpret_cast<const unsigned char *>(text); *character != '\0';)
     {
-        const std::uint16_t codepoint = decode_character(*character, encoding);
+        const std::uint16_t codepoint = (encoding == TextEncoding::UTF8) ?
+                                            next_utf8_codepoint(character) :
+                                            decode_character(*character++, encoding);
+        ++character_count;
         if (draw_glyph(cursor_x, y, character_width, character_height, codepoint, color, bold) ||
             draw_glyph(cursor_x, y, character_width, character_height, '?', color, bold))
         {
@@ -678,7 +724,7 @@ void draw_text_sized(int x,
         cursor_x += character_width;
     }
 
-    const int text_width = static_cast<int>(std::strlen(text)) * character_width;
+    const int text_width = character_count * character_width;
     if (underlined)
     {
         fill_rect(x, y + character_height - 1, text_width, 1, color);
@@ -687,5 +733,20 @@ void draw_text_sized(int x,
     {
         fill_rect(x, y + character_height / 2, text_width, 1, color);
     }
+}
+
+int text_length(const char *text)
+{
+    if (text == nullptr)
+    {
+        return 0;
+    }
+    int count = 0;
+    for (const auto *character = reinterpret_cast<const unsigned char *>(text); *character != '\0';)
+    {
+        next_utf8_codepoint(character);
+        ++count;
+    }
+    return count;
 }
 }

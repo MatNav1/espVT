@@ -23,6 +23,7 @@ set(ISOVT_SOURCES
     "section_control.cpp"
     "stb_truetype_impl.c"
     "vt_audio.cpp"
+    "ui_text.cpp"
     "vt_font.cpp"
     "vt_scene_renderer.cpp"
 )

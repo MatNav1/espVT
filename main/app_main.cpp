@@ -38,7 +38,7 @@ void start_terminal_when_bus_is_active(void *)
     vt_view::set_bus_state(true, stack_ready);
     if (!stack_ready)
     {
-        vt_view::set_status("ISOBUS VT start failed");
+        vt_view::set_status(ui_text::Id::StatusVtStartFailed);
     }
     vTaskDelete(nullptr);
 }
@@ -78,7 +78,7 @@ extern "C" void app_main()
 
     vt_view::init();
     can_monitor::enable_ui_updates();
-    vt_view::set_status("Initializing ISOBUS terminal");
+    vt_view::set_status(ui_text::Id::StatusInitializing);
 
     const bool touch_ready = (touch::start() == ESP_OK);
     ESP_LOGI(TAG, "Touch: %s", touch_ready ? "ready" : "not ready");
@@ -111,13 +111,13 @@ extern "C" void app_main()
                                     1) != pdPASS)
         {
             ESP_LOGE(TAG, "Could not create VT bus wait task");
-            vt_view::set_status("ISOBUS startup task failed");
+            vt_view::set_status(ui_text::Id::StatusStartupTaskFailed);
         }
     }
     vt_view::set_bus_state(can_ready, false);
 
     if (!can_ready)
     {
-        vt_view::set_status("CAN start failed");
+        vt_view::set_status(ui_text::Id::StatusCanStartFailed);
     }
 }
