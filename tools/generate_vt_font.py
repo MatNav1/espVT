@@ -10,7 +10,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
-FONT_SIZES = ((8, 12), (12, 16), (16, 24), (32, 48), (48, 64))
+# 6x10, 12x20 and 18x30 put the capitals over the 5x7 cell of the bitmap font at
+# scale 1-3, so lcd_panel::draw_text() can use them without resampling.
+FONT_SIZES = ((6, 10), (8, 12), (12, 16), (12, 20), (16, 24), (18, 30), (32, 48), (48, 64))
 ENCODINGS = ("iso-8859-1", "iso-8859-2", "iso-8859-15")
 
 
@@ -40,7 +42,7 @@ def render_glyph(font_path: Path, codepoint: int, width: int, height: int) -> by
     image = image.resize((width, height), Image.Resampling.LANCZOS)
 
     packed = bytearray((width * height + 3) // 4)
-    for index, value in enumerate(image.getdata()):
+    for index, value in enumerate(image.tobytes()):
         alpha = min(3, (int(value) + 42) // 85)
         packed[index // 4] |= alpha << ((index % 4) * 2)
     return bytes(packed)

@@ -728,34 +728,15 @@ void draw_line(int x0, int y0, int x1, int y1, std::uint16_t color, int thicknes
 
 void draw_text(int x, int y, int scale, const char *text, std::uint16_t color)
 {
-    if (!is_ready() || !frame_in_progress || (text == nullptr) || (scale <= 0))
+    if ((text == nullptr) || (scale <= 0))
     {
         return;
     }
 
-    int cursor_x = x;
-    for (const char *character = text; *character != '\0'; ++character)
-    {
-        char upper = *character;
-        if ((upper >= 'a') && (upper <= 'z'))
-        {
-            upper = static_cast<char>(upper - ('a' - 'A'));
-        }
-
-        const std::uint8_t *glyph = glyph_for(upper);
-        for (int column = 0; column < 5; ++column)
-        {
-            for (int row = 0; row < 7; ++row)
-            {
-                if ((glyph[column] & (1U << row)) == 0U)
-                {
-                    continue;
-                }
-                fill_rect(cursor_x + column * scale, y + row * scale, scale, scale, color);
-            }
-        }
-        cursor_x += 6 * scale;
-    }
+    // Roboto Mono cells of 6x10 per scale step; their capitals cover the 5x7 box
+    // of the former bitmap font at (x, y), so layouts keep their positions.
+    const int capital_top = (5 * scale + 1) / 3;
+    draw_text_sized(x, y - capital_top, 6 * scale, 10 * scale, text, color);
 }
 
 void draw_text_sized(int x,
