@@ -56,7 +56,8 @@ void render_locked()
     }
 
     lcd_panel::fill(COLOR_BACKGROUND);
-    lcd_panel::fill_rect(0, 0, board::LCD_WIDTH, 58, COLOR_HEADER);
+    lcd_panel::fill_rect(0, 0, board::LCD_WIDTH, board::UI_Y + 58, COLOR_HEADER);
+    lcd_panel::use_ui_area();
     lcd_panel::draw_text(32, 18, 3, "ISOBUS ACCESS TERMINAL", COLOR_TEXT);
     lcd_panel::draw_text(764, 18, 2, can_ready ? "CAN READY" : "CAN STARTING", can_ready ? COLOR_OK : COLOR_TEXT);
 
@@ -74,7 +75,7 @@ void render_locked()
     lcd_panel::draw_text(MENU_BUTTON_X + 26, MENU_BUTTON_Y + 121, 2, "N", COLOR_TEXT);
     lcd_panel::draw_text(MENU_BUTTON_X + 26, MENU_BUTTON_Y + 149, 2, "U", COLOR_TEXT);
 
-    lcd_panel::fill_rect(42, 394, board::LCD_WIDTH - 84, 3, COLOR_ACCENT);
+    lcd_panel::fill_rect(42, 394, board::UI_WIDTH - 84, 3, COLOR_ACCENT);
     if (object_pool_download_active)
     {
         constexpr int progress_x = 42;
@@ -408,8 +409,10 @@ void on_touch(std::uint16_t x, std::uint16_t y, std::size_t count)
     ESP_LOGI(TAG, "Touch: x=%u y=%u points=%u", x, y, static_cast<unsigned>(count));
 }
 
-bool is_idle_menu_touch(std::uint16_t x, std::uint16_t y)
+bool is_idle_menu_touch(std::uint16_t lcd_x, std::uint16_t lcd_y)
 {
+    const int x = static_cast<int>(lcd_x) - board::UI_X;
+    const int y = static_cast<int>(lcd_y) - board::UI_Y;
     if (view_mutex == nullptr)
     {
         return false;

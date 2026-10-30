@@ -13,7 +13,7 @@ int height()
 
 void draw_centered(int top_y)
 {
-    const int left = (board::LCD_WIDTH - logo_asset::WIDTH) / 2;
+    const int left = (board::UI_WIDTH - logo_asset::WIDTH) / 2;
     lcd_panel::draw_rgb565(left, top_y, logo_asset::WIDTH, logo_asset::HEIGHT, logo_asset::PIXELS);
 }
 }

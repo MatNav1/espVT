@@ -1,52 +1,103 @@
 #!/bin/bash
 #
 # ==============================================================================
-# espVT Build Script - ESP-IDF builder for the ESP32-S3 ISOBUS Virtual Terminal
+# espVT Build Script - ESP-IDF builder for the ISOBUS Virtual Terminal
 # ==============================================================================
 #
 # USAGE:
-#   ./make_espVT.sh [command] [variant] [options]
+#   ./make_espVT.sh [command] [target] [options]
 #
 # COMMANDS:
-#   all                       Build all variants (default)
-#   <variant>                 Build one variant
-#   flash <variant> [PORT]    Flash and monitor a variant (builds it if needed)
-#   menuconfig <variant>      Open menuconfig for a variant
-#   clean [variant]           Remove build directories (all or one)
+#   all                       Build all targets (default)
+#   <target>                  Build one target
+#   flash <target> [PORT]     Build, then flash and monitor a target
+#   menuconfig <target>       Open menuconfig for a target
+#   clean [target]            Remove build directories (all or one)
 #
 # OPTIONS:
 #   force                     Delete the build directory before building
 #
-# VARIANTS:
-#   default   sdkconfig.defaults                              -> build/
-#   rs232     sdkconfig.defaults + sdkconfig.rs232.defaults   -> build-rs232/  (release variant)
-#   ntrip     sdkconfig.defaults + sdkconfig.ntrip.defaults   -> build-ntrip/  (UM982 RTK + NTRIP, Wi-Fi)
+# TARGETS (chip, sdkconfig layers on top of sdkconfig.defaults + .<chip>):
+#   Waveshare7B        esp32s3  Waveshare ESP32-S3-Touch-LCD-7B, no GNSS
+#   Waveshare7B_RS232  esp32s3  + NMEA over RS-232 (release target)
+#   Waveshare7B_NTRIP  esp32s3  + UM982 RTK with NTRIP over Wi-Fi
+#   JC8012P4           esp32p4  Guition JC8012P4A1C_I_W_Y 10.1", no GNSS
+#
+#   Aliases: default -> Waveshare7B, rs232 -> Waveshare7B_RS232,
+#            ntrip -> Waveshare7B_NTRIP, p4 -> JC8012P4
 #
 # EXAMPLES:
-#   ./make_espVT.sh                     # Build everything
-#   ./make_espVT.sh rs232               # Build the RS-232 variant
-#   ./make_espVT.sh rs232 force         # Clean rebuild of the RS-232 variant
-#   ./make_espVT.sh flash rs232 /dev/ttyACM0
-#   ./make_espVT.sh menuconfig ntrip    # Set Wi-Fi/NTRIP credentials (never commit them)
+#   ./make_espVT.sh                          # Build everything
+#   ./make_espVT.sh Waveshare7B_RS232        # Build one target
+#   ./make_espVT.sh JC8012P4 force           # Clean rebuild
+#   ./make_espVT.sh flash JC8012P4 /dev/ttyACM5
+#   ./make_espVT.sh menuconfig Waveshare7B_NTRIP   # Wi-Fi/NTRIP credentials
 #
 # OUTPUT:
-#   delivery/espVT-<version>-<VARIANT>.bin   merged image (bootloader + partitions + app), flash at 0x0
+#   build_<target>/                          build directory incl. its sdkconfig
+#   delivery/espVT-<version>-<target>.bin    merged image, flash at 0x0
 #
-# ESP-IDF is sourced automatically from IDF_ACTIVATE (default: v6.1) when idf.py is
-# not already on PATH.
+# ESP-IDF is loaded from IDF_ACTIVATE (default: v6.1) when idf.py is not
+# already on PATH.
 # ==============================================================================
 
 IDF_ACTIVATE="${IDF_ACTIVATE:-$HOME/.espressif/tools/activate_idf_v6.1.sh}"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_VARIANTS="default rs232 ntrip"
+ALL_TARGETS="Waveshare7B Waveshare7B_RS232 Waveshare7B_NTRIP JC8012P4"
 
 COMMAND="${1:-all}"
 ARG2="$2"
 ARG3="$3"
 
+# Sets TARGET, CHIP, BUILD_DIR and SDKCONFIG_DEFAULTS for a target name or alias.
+select_target() {
+    case "$1" in
+        default) TARGET="Waveshare7B" ;;
+        rs232) TARGET="Waveshare7B_RS232" ;;
+        ntrip) TARGET="Waveshare7B_NTRIP" ;;
+        p4) TARGET="JC8012P4" ;;
+        *) TARGET="$1" ;;
+    esac
+    case "$TARGET" in
+        Waveshare7B)
+            CHIP="esp32s3"
+            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.Waveshare7B.esp32s3"
+            ;;
+        Waveshare7B_RS232)
+            CHIP="esp32s3"
+            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.Waveshare7B.esp32s3;sdkconfig.defaults.rs232"
+            ;;
+        Waveshare7B_NTRIP)
+            CHIP="esp32s3"
+            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.Waveshare7B.esp32s3;sdkconfig.defaults.ntrip"
+            ;;
+        JC8012P4)
+            CHIP="esp32p4"
+            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32p4;sdkconfig.defaults.JC8012P4.esp32p4"
+            ;;
+        *)
+            echo "Error: unknown target '$1'. Available: $ALL_TARGETS"
+            return 1
+            ;;
+    esac
+    BUILD_DIR="build_$TARGET"
+}
+
+cd "$PROJECT_DIR" || exit 1
+
+# clean needs no ESP-IDF environment, so it runs before loading one.
+if [ "$COMMAND" == "clean" ]; then
+    for target in ${ARG2:-$ALL_TARGETS}; do
+        select_target "$target" || exit 1
+        echo "Removing $BUILD_DIR"
+        rm -rf "$BUILD_DIR"
+    done
+    exit 0
+fi
+
 if ! command -v idf.py &> /dev/null; then
     echo "----------------------------------------------------------------------------"
-    echo "Sourcing ESP-IDF environment: $IDF_ACTIVATE"
+    echo "Loading ESP-IDF environment: $IDF_ACTIVATE"
     echo "----------------------------------------------------------------------------"
     if [ ! -f "$IDF_ACTIVATE" ]; then
         echo "Error: $IDF_ACTIVATE not found. Set IDF_ACTIVATE to your ESP-IDF activate script."
@@ -65,8 +116,6 @@ if ! command -v idf.py &> /dev/null; then
     idf.py() { "$IDF_PYTHON_ENV_PATH/bin/python" "$IDF_PATH/tools/idf.py" "$@"; }
 fi
 
-cd "$PROJECT_DIR" || exit 1
-
 FORCE_REBUILD=false
 for arg in "$@"; do
     if [ "$arg" == "force" ]; then
@@ -77,67 +126,43 @@ done
 
 VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
 
-# Sets BUILD_DIR, SDKCONFIG_FILE, SDKCONFIG_DEFAULTS and DELIVERY_NAME for a variant.
-select_variant() {
-    case "$1" in
-        default)
-            BUILD_DIR="build"
-            SDKCONFIG_FILE="$PROJECT_DIR/sdkconfig"
-            SDKCONFIG_DEFAULTS="sdkconfig.defaults"
-            DELIVERY_NAME="espVT-$VERSION.bin"
-            ;;
-        rs232)
-            BUILD_DIR="build-rs232"
-            SDKCONFIG_FILE="$PROJECT_DIR/sdkconfig.rs232"
-            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.rs232.defaults"
-            DELIVERY_NAME="espVT-$VERSION-RS232.bin"
-            ;;
-        ntrip)
-            BUILD_DIR="build-ntrip"
-            SDKCONFIG_FILE="$PROJECT_DIR/sdkconfig.ntrip"
-            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ntrip.defaults"
-            DELIVERY_NAME="espVT-$VERSION-NTRIP.bin"
-            ;;
-        *)
-            echo "Error: unknown variant '$1'. Available: $ALL_VARIANTS"
-            return 1
-            ;;
-    esac
+# IDF_TARGET is set per call, so a target inherited from the shell cannot override it.
+idf_target() {
+    IDF_TARGET="$CHIP" idf.py -B "$BUILD_DIR" -D SDKCONFIG_DEFAULTS="$SDKCONFIG_DEFAULTS" "$@"
 }
 
-# All variants are ESP32-S3. Set the target explicitly, so an IDF_TARGET inherited
-# from the shell cannot override it.
-export IDF_TARGET=esp32s3
-
-idf_variant() {
-    idf.py -B "$BUILD_DIR" -D SDKCONFIG="$SDKCONFIG_FILE" -D SDKCONFIG_DEFAULTS="$SDKCONFIG_DEFAULTS" "$@"
+# A fresh build directory would otherwise fall back to the esp32 target.
+ensure_target() {
+    if ! grep -q "^CONFIG_IDF_TARGET=\"$CHIP\"" "$BUILD_DIR/sdkconfig" 2>/dev/null; then
+        idf_target set-target "$CHIP" || return 1
+    fi
 }
 
-build_variant() {
-    select_variant "$1" || return 1
+build_target() {
+    select_target "$1" || return 1
     echo "============================================================================"
-    echo "[$1] building in $BUILD_DIR"
+    echo "[$TARGET] building $CHIP in $BUILD_DIR"
     echo "============================================================================"
 
     if [ "$FORCE_REBUILD" == true ]; then
         rm -rf "$BUILD_DIR"
     fi
-    # The target comes from IDF_TARGET (exported above). No set-target here:
-    # it would regenerate the variant's sdkconfig and drop menuconfig settings.
-
-    idf_variant build || return 1
-    idf_variant merge-bin || return 1
+    # A failed build must not leave an older image under the expected name.
+    rm -f "delivery/espVT-$VERSION-$TARGET.bin"
+    ensure_target || return 1
+    idf_target build || return 1
+    idf_target merge-bin || return 1
 
     mkdir -p delivery || return 1
-    cp "$BUILD_DIR/merged-binary.bin" "delivery/$DELIVERY_NAME" || return 1
-    echo "[$1] -> delivery/$DELIVERY_NAME"
+    cp "$BUILD_DIR/merged-binary.bin" "delivery/espVT-$VERSION-$TARGET.bin" || return 1
+    echo "[$TARGET] -> delivery/espVT-$VERSION-$TARGET.bin"
 }
 
 case "$COMMAND" in
     all|force)
         FAILED=""
-        for variant in $ALL_VARIANTS; do
-            build_variant "$variant" || FAILED="$FAILED $variant"
+        for target in $ALL_TARGETS; do
+            build_target "$target" || FAILED="$FAILED $target"
         done
         echo "----------------------------------------------------------------------------"
         if [ -n "$FAILED" ]; then
@@ -146,39 +171,29 @@ case "$COMMAND" in
         fi
         echo " DONE. Images in delivery/:"
         ls -1 delivery/
-        echo " To flash: ./make_espVT.sh flash <variant> [PORT]"
+        echo " To flash: ./make_espVT.sh flash <target> [PORT]"
         echo "----------------------------------------------------------------------------"
         ;;
     flash)
         if [ -z "$ARG2" ]; then
-            echo "Usage: ./make_espVT.sh flash <variant> [PORT]"
+            echo "Usage: ./make_espVT.sh flash <target> [PORT]"
             exit 1
         fi
-        select_variant "$ARG2" || exit 1
-        if [ ! -f "$BUILD_DIR/CMakeCache.txt" ]; then
-            build_variant "$ARG2" || exit 1
-        fi
+        select_target "$ARG2" || exit 1
+        # Always build first, so delivery/ holds the image that gets flashed.
+        build_target "$ARG2" || exit 1
         PORT_ARGS=()
         if [ -n "$ARG3" ]; then
             PORT_ARGS=(-p "$ARG3")
         fi
-        idf_variant "${PORT_ARGS[@]}" flash monitor
+        idf_target "${PORT_ARGS[@]}" flash monitor
         ;;
     menuconfig)
-        select_variant "${ARG2:-default}" || exit 1
-        if [ ! -f "$BUILD_DIR/CMakeCache.txt" ]; then
-            idf_variant set-target esp32s3 || exit 1
-        fi
-        idf_variant menuconfig
-        ;;
-    clean)
-        for variant in ${ARG2:-$ALL_VARIANTS}; do
-            select_variant "$variant" || exit 1
-            echo "Removing $BUILD_DIR"
-            rm -rf "$BUILD_DIR"
-        done
+        select_target "${ARG2:-Waveshare7B}" || exit 1
+        ensure_target || exit 1
+        idf_target menuconfig
         ;;
     *)
-        build_variant "$COMMAND" || exit 1
+        build_target "$COMMAND" || exit 1
         ;;
 esac

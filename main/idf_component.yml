@@ -1,0 +1,7 @@
+dependencies:
+  idf: ">=6.1"
+  # Display driver of the Guition JC8012P4A1C board (ESP32-P4 only).
+  espressif/esp_lcd_jd9365:
+    version: "2.0.2"
+    rules:
+      - if: "target == esp32p4"

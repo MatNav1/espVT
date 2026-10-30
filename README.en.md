@@ -6,7 +6,8 @@
 > it as the sole control or safety device for agricultural machinery.
 
 An ISOBUS/UT access terminal for the Waveshare ESP32-S3-Touch-LCD-7B board,
-built on AgIsoStack++.
+built on AgIsoStack++. The Guition JC8012P4A1C_I_W_Y board with an ESP32-P4 and a
+10.1" display is supported experimentally.
 
 The repository also contains firmware for a separate AUX-N button panel for the
 ESP32U in the `auxn_buttons_esp32` directory.
@@ -39,6 +40,20 @@ Note: the USB port and CAN share the GPIO19/20 lines. Use the board's UART/USB
 port for programming, or switch EXIO5 to USB mode as described in the Waveshare
 documentation.
 
+### Guition JC8012P4A1C_I_W_Y (ESP32-P4, experimental)
+
+- 10.1" MIPI-DSI LCD, 800x1280 panel (JD9365, "new panel", SKU 10153001-V3),
+  used in landscape as 1280x800; the PPA does the rotation in hardware,
+- GSL3680 touch over I2C (SDA GPIO7, SCL GPIO8, RST GPIO22, INT GPIO21),
+- backlight GPIO23, LCD reset GPIO27,
+- no CAN transceiver on the board: connect an external 3.3 V transceiver
+  (e.g. SN65HVD230) to the FPC3 connector, by default TX GPIO4, RX GPIO5,
+  powered from VDDA/GND.
+
+The terminal menu and the waiting screen are drawn 1:1 in a centered 1024x600
+window; the VT area uses the full 800-pixel height. Sound (ES8311) and GNSS are
+not ported to this board yet.
+
 ## 3D-printed enclosure
 
 The current enclosure model is in
@@ -50,7 +65,7 @@ power supply and an RS-232 connector; the intended material is PETG.
 
 - `main/board_pins.hpp` - hardware constants for the ESP32-S3-Touch-LCD-7B.
 - `main/app_main.cpp` - application entry point.
-- `main/board_support.*` - I2C, IO expander and CAN mode initialization.
+- `main/board_support*` - I2C, IO expander and CAN mode initialization.
 - `main/can_monitor.*` - TWAI startup through AgIsoStack++.
 - `main/lcd_panel.*` - RGB565 driver for the 1024x600 panel with two framebuffers in PSRAM.
 - `main/touch_gt911.*` - GT911 touch initialization and diagnostics.
@@ -74,15 +89,16 @@ The adapter is enabled by default. Before connecting to a real bus, set your
 assigned manufacturer code and a unique terminal number:
 
 ```sh
-./make_espVT.sh menuconfig rs232
+./make_espVT.sh menuconfig Waveshare7B_RS232
 ```
 
-and set `ISOVT_MANUFACTURER_CODE` and `ISOVT_IDENTITY_NUMBER`. Each variant has
-its own configuration, so set these values for every variant you use.
+and set `ISOVT_MANUFACTURER_CODE` and `ISOVT_IDENTITY_NUMBER`. Each target has
+its own configuration in `build_<target>/sdkconfig`, so set these values for every
+target you use.
 
 ## Building
 
-ESP-IDF 6.1 with ESP32-S3 support is required. If `idf.py` is not available,
+ESP-IDF 6.1 with ESP32-S3 and ESP32-P4 support is required. If `idf.py` is not available,
 `make_espVT.sh` loads the environment from
 `~/.espressif/tools/activate_idf_v6.1.sh`; point the `IDF_ACTIVATE` variable at a
 different installation if needed.
@@ -92,30 +108,37 @@ Bluetooth libraries are not linked. The terminal uses CAN/TWAI, I2C and SPIFFS,
 so this keeps platform dependencies to what is needed.
 
 ```sh
-./make_espVT.sh                          # all variants: default, rs232, ntrip
-./make_espVT.sh rs232                    # one variant
-./make_espVT.sh rs232 force              # rebuild from scratch
-./make_espVT.sh flash rs232 /dev/ttyACM0 # flash and monitor
-./make_espVT.sh clean                    # remove the build directories
+./make_espVT.sh                                 # all targets
+./make_espVT.sh Waveshare7B_RS232               # one target
+./make_espVT.sh JC8012P4 force                  # rebuild from scratch
+./make_espVT.sh flash Waveshare7B_RS232 /dev/ttyACM0  # flash and monitor
+./make_espVT.sh clean                           # remove the build directories
 ```
 
-| Variant | Configuration | Directory |
+| Target | Chip | Additional configuration |
 |---|---|---|
-| `default` | `sdkconfig.defaults` | `build/` |
-| `rs232` | `sdkconfig.defaults` + `sdkconfig.rs232.defaults` | `build-rs232/` |
-| `ntrip` | `sdkconfig.defaults` + `sdkconfig.ntrip.defaults` | `build-ntrip/` |
+| `Waveshare7B` | ESP32-S3 | `sdkconfig.defaults.Waveshare7B.esp32s3` |
+| `Waveshare7B_RS232` | ESP32-S3 | + `sdkconfig.defaults.rs232` |
+| `Waveshare7B_NTRIP` | ESP32-S3 | + `sdkconfig.defaults.ntrip` |
+| `JC8012P4` | ESP32-P4 | `sdkconfig.defaults.JC8012P4.esp32p4` |
+
+The configuration is layered: `sdkconfig.defaults` (shared),
+`sdkconfig.defaults.<chip>` (chip settings), `sdkconfig.defaults.<board>.<chip>`
+(board) and optional `sdkconfig.defaults.<feature>` files. Each target builds in
+`build_<target>/` with its own `sdkconfig`. The old names `default`, `rs232` and
+`ntrip` still work as aliases, and `p4` means `JC8012P4`.
 
 ## Single firmware file for releases
 
 Every build creates a complete image containing the bootloader, partition table
-and application in `delivery/`, e.g. `delivery/espVT-v0.1.0-RS232.bin` (the
+and application in `delivery/`, e.g. `delivery/espVT-v0.1.0-Waveshare7B_RS232.bin` (the
 version comes from `git describe`). Flash the image at address `0x0`:
 
 ```sh
-esptool.py --chip esp32s3 --port PORT write_flash 0x0 espVT-v0.1.0-RS232.bin
+esptool.py --chip esp32s3 --port PORT write_flash 0x0 espVT-v0.1.0-Waveshare7B_RS232.bin
 ```
 
-Attach this single RS-232 variant file to the GitHub Release. The image is meant
+Attach this single `Waveshare7B_RS232` file to the GitHub Release. The image is meant
 for 16 MB flash; the firmware runs it in QIO mode at 120 MHz (the image header
 uses DIO/80 MHz, as is usual for ESP-IDF, and the bootloader switches over).
 
@@ -156,15 +179,16 @@ The `Serial` variant receives the same NMEA data through a MAX3232 and an RS-232
 port. Both variants provide a position-quality gate for future section
 automation when the receiver reports a fresh RTK fix.
 
-The `default` variant has no external GNSS (`ISOVT_GNSS_SOURCE_NONE`), which
-disables GPS input and the speed sent over ISOBUS. The `rs232` variant enables
-RS-232 (UART1, RX GPIO11, 57600 bit/s). The `ntrip` variant enables the UM982
-with NTRIP; set the Wi-Fi and NTRIP credentials with
-`./make_espVT.sh menuconfig ntrip` and do not publish `sdkconfig.ntrip`.
+The `Waveshare7B` target has no external GNSS (`ISOVT_GNSS_SOURCE_NONE`), which
+disables GPS input and the speed sent over ISOBUS. The `Waveshare7B_RS232` target
+enables RS-232 (UART1, RX GPIO11, 57600 bit/s). The `Waveshare7B_NTRIP` target
+enables the UM982 with NTRIP; set the Wi-Fi and NTRIP credentials with
+`./make_espVT.sh menuconfig Waveshare7B_NTRIP` and do not publish
+`build_Waveshare7B_NTRIP/sdkconfig`.
 
 ```sh
-./make_espVT.sh rs232
-./make_espVT.sh flash rs232 PORT
+./make_espVT.sh Waveshare7B_RS232
+./make_espVT.sh flash Waveshare7B_RS232 PORT
 ```
 
 Default wiring: `GPIO11 <- RXD` on the TTL side of the MAX3232 converter, plus a
@@ -207,3 +231,12 @@ configuration details are in `GNSS_NTRIP.md` (Polish).
 ## Running on the board
 
 The first-test sequence and the expected messages are described in `BRINGUP.md` (Polish).
+
+## License
+
+espVT is distributed under the GNU GPL version 3 or (at your option) any later
+version, see `LICENSE`. Earlier espVT code was published under the MIT license;
+its text and copyright notice are kept in `LICENSES/MIT-espVT.txt`. The change
+follows from including the GSL3680 touch driver (`components/esp_lcd_touch_gsl3680`),
+whose Silead algorithm is licensed GPL-2.0-or-later. AgIsoStack++ in
+`third_party/` keeps its own MIT license, and ESP-IDF is Apache-2.0.
