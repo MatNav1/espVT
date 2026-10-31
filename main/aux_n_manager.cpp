@@ -304,8 +304,7 @@ public:
                        (candidate.object_id == input_object_id);
             });
             if ((selected == catalog.functions.end()) || (selected_input == catalog.inputs.end()) ||
-                (selected->protocol != protocol) || (selected->function_type != selected_input->function_type) ||
-                (selected->critical && !selected_input->critical))
+                !can_assign_locked(*selected, *selected_input, false))
             {
                 return false;
             }
@@ -359,7 +358,7 @@ public:
             }
             for (const auto &input : catalog.inputs)
             {
-                if (is_compatible(*selected, input) && input.online)
+                if (can_assign_locked(*selected, input, false) && input.online)
                 {
                     if (auto control = control_functions[input.device_name].lock())
                     {
@@ -578,7 +577,20 @@ public:
                     error |= 0x08U;
                     faulty_object = function_id;
                 }
-                else if ((function->function_type != input->function_type) || (function->critical && !input->critical))
+                else if (!is_compatible(*function, *input) ||
+                         has_single_assignment_conflict_locked(*function,
+                                                               *input,
+                                                               implement->get_NAME().get_full_name()))
+                {
+                    error |= 0x10U;
+                    faulty_object = function_id;
+                }
+                else if (std::any_of(accepted.begin(), accepted.end(), [&](const auto &entry) {
+                             const bool same_input = (entry.second.device_name == input->device_name) &&
+                                                     (entry.second.object_id == input->object_id);
+                             return same_input && (function->single_assignment || input->single_assignment ||
+                                                   entry.first.single_assignment || entry.second.single_assignment);
+                         }))
                 {
                     error |= 0x10U;
                     faulty_object = function_id;
@@ -650,6 +662,47 @@ private:
         return (function.protocol == input.protocol) &&
                (function.function_type == input.function_type) &&
                (!function.critical || input.critical);
+    }
+
+    bool has_single_assignment_conflict_locked(const aux_n::FunctionDescriptor &function,
+                                               const aux_n::InputDescriptor &input,
+                                               std::uint64_t ignored_implement_name = 0) const
+    {
+        for (const auto &assignment : catalog.assignments)
+        {
+            if ((assignment.protocol != function.protocol) ||
+                (assignment.device_name != input.device_name) ||
+                (assignment.input_object_id != input.object_id) ||
+                ((assignment.error_code != 0U) && !assignment.confirmed) ||
+                ((ignored_implement_name != 0U) && (assignment.implement_name == ignored_implement_name)) ||
+                ((assignment.implement_name == function.implement_name) &&
+                 (assignment.function_object_id == function.object_id)))
+            {
+                continue;
+            }
+
+            const auto assigned_function = std::find_if(catalog.functions.begin(), catalog.functions.end(),
+                                                         [&](const aux_n::FunctionDescriptor &entry) {
+                                                             return (entry.protocol == assignment.protocol) &&
+                                                                    (entry.implement_name == assignment.implement_name) &&
+                                                                    (entry.object_id == assignment.function_object_id);
+                                                         });
+            if (function.single_assignment || input.single_assignment ||
+                ((assigned_function != catalog.functions.end()) && assigned_function->single_assignment))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool can_assign_locked(const aux_n::FunctionDescriptor &function,
+                           const aux_n::InputDescriptor &input,
+                           bool preferred_assignment) const
+    {
+        return is_compatible(function, input) &&
+               (preferred_assignment || !function.restricted) &&
+               !has_single_assignment_conflict_locked(function, input);
     }
 
     void remember_pending(const aux_n::FunctionDescriptor &function,

@@ -110,6 +110,10 @@ Do GitHub Release należy dołączyć ten jeden plik, nazwany na przykład
 `espVT-v0.1.0-RS232.bin`. Obraz jest przeznaczony dla pamięci flash 16 MB,
 trybu DIO i częstotliwości 80 MHz.
 
+Build panelu AUX-N automatycznie tworzy drugi kompletny obraz
+`releases/espVT-AUX-N-ESP32U.bin`. Jest on przeznaczony dla klasycznego ESP32U
+z pamięcią 4 MB i również wgrywa się go od adresu `0x0`.
+
 Build zostal zweryfikowany na ESP-IDF 5.5 dla ESP32-S3. Firmware inicjalizuje
 panel RGB 1024x600 zgodnie z parametrami Waveshare, pokazuje logo startowe
 i ekran oczekiwania na working set maszyny,
@@ -185,7 +189,7 @@ maszyny i dopuszczalnego nakladania. Szczegoly podlaczenia i konfiguracji sa w
 2. Zmienic domyslny kod producenta i numer terminala przed pierwszym address claim.
 3. Dodac brakujace obiekty renderera: PictureGraphic, GraphicsContext, Line/Ellipse/Polygon,
    Input List oraz pelna edycje liczb i tekstu.
-4. Dodac ekran przypisan AUX-N i przetestowac przypisanie z prawdziwym kontrolerem AUX.
+4. Przetestowac ekran przypisan AUX-N z prawdziwym kontrolerem AUX i ECU maszyny.
 5. Przetestowac z ECU wysylajacym prosty IOP, a dopiero potem z prawdziwa maszyna.
 
 ## Zrodla projektowe

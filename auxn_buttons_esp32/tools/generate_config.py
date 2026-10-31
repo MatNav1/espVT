@@ -75,8 +75,19 @@ def aux_input(object_id, designator_id):
             u16(designator_id) + i16(0) + i16(0))
 
 
-def load_buttons():
+def load_config():
     data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    device = data.get("device", {})
+    manufacturer_code = device.get("manufacturer_code", 1407)
+    identity_number = device.get("identity_number", "auto")
+    model_code = device.get("model_identification_code", 1)
+    if not isinstance(manufacturer_code, int) or not 0 <= manufacturer_code <= 0x7FF:
+        raise ValueError("manufacturer_code must be an integer from 0 to 2047")
+    if identity_number != "auto" and (not isinstance(identity_number, int) or not 1 <= identity_number <= 0x1FFFFF):
+        raise ValueError('identity_number must be "auto" or an integer from 1 to 2097151')
+    if not isinstance(model_code, int) or not 0 <= model_code <= 0xFFFF:
+        raise ValueError("model_identification_code must be an integer from 0 to 65535")
+
     buttons = data.get("buttons", [])
     if not 1 <= len(buttons) <= 32:
         raise ValueError("buttons.json must contain between 1 and 32 buttons")
@@ -97,11 +108,11 @@ def load_buttons():
             raise ValueError(f"button label {label!r} must be 1..6 characters")
         seen.add(pin)
         button["label"] = label
-    return buttons
+    return buttons, manufacturer_code, identity_number, model_code
 
 
 def generate():
-    buttons = load_buttons()
+    buttons, manufacturer_code, identity_number, model_code = load_config()
     button_ids = [BUTTON_ID_BASE + i for i in range(len(buttons))]
 
     pool = bytearray()
@@ -122,6 +133,10 @@ def generate():
         "#pragma once",
         "#include <stdint.h>",
         f"static constexpr uint8_t NUM_AUX_BUTTONS = {len(buttons)};",
+        f"static constexpr uint16_t AUX_MANUFACTURER_CODE = {manufacturer_code};",
+        f"static constexpr bool AUX_USE_HARDWARE_IDENTITY = {'true' if identity_number == 'auto' else 'false'};",
+        f"static constexpr uint32_t AUX_IDENTITY_NUMBER = {0 if identity_number == 'auto' else identity_number};",
+        f"static constexpr uint16_t AUX_MODEL_IDENTIFICATION_CODE = {model_code};",
         "static constexpr uint8_t BUTTON_PINS[NUM_AUX_BUTTONS] = {" +
         ", ".join(str(item["pin"]) for item in buttons) + "};",
         "static constexpr uint16_t AUX_BUTTON_IDS[NUM_AUX_BUTTONS] = {" +
