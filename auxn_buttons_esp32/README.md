@@ -38,6 +38,12 @@ Dozwolone piny: GPIO4, 13, 14, 16, 17, 18, 19, 23, 25, 26, 27, 32 i 33.
 Generator odrzuci powtórzone oraz ryzykowne piny. Piny GPIO21 i GPIO22 są
 zarezerwowane dla CAN.
 
+Sekcja `device` w tym samym pliku ustawia kod producenta, kod modelu oraz
+tożsamość ISO NAME. Domyślne `"identity_number": "auto"` tworzy stabilny,
+unikalny numer z identyfikatora sprzętowego ESP32. Kod producenta `1407` jest
+wartością laboratoryjną i przed wydaniem produktu należy zastąpić przydzielonym
+kodem producenta.
+
 Przed każdą kompilacją PlatformIO automatycznie generuje konfigurację oraz
 pulę obiektów VT. Ręcznie można ją odtworzyć poleceniem:
 
@@ -51,6 +57,20 @@ Kompilacja i wgrywanie:
 pio run -t upload
 pio device monitor
 ```
+
+Po każdym poprawnym buildzie powstaje też kompletny obraz:
+
+```text
+../releases/espVT-AUX-N-ESP32U.bin
+```
+
+Wgrywa się go od adresu `0x0`:
+
+```sh
+esptool.py --chip esp32 --port PORT write_flash 0x0 ../releases/espVT-AUX-N-ESP32U.bin
+```
+
+Firmware sam rozpoczyna odzyskiwanie kontrolera po stanie CAN bus-off.
 
 ## Uwagi sprzętowe
 

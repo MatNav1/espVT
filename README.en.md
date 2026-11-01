@@ -147,6 +147,10 @@ Attach this single `Waveshare7B_RS232` file to the GitHub Release. The image is 
 for 16 MB flash; the firmware runs it in QIO mode at 120 MHz (the image header
 uses DIO/80 MHz, as is usual for ESP-IDF, and the bootloader switches over).
 
+The AUX-N panel build automatically creates a second complete image,
+`releases/espVT-AUX-N-ESP32U.bin`. It is meant for a classic ESP32U with 4 MB
+flash and is also flashed at address `0x0`.
+
 The build is checked with ESP-IDF 6.1 for the ESP32-S3. The firmware initializes
 the 1024x600 RGB panel with the Waveshare parameters, shows the boot logo and a
 screen that waits for the machine's working set, and checks the GT911 touch
@@ -223,7 +227,7 @@ configuration details are in `GNSS_NTRIP.md` (Polish).
 2. Change the default manufacturer code and terminal number before the first address claim.
 3. Add the missing renderer objects: PictureGraphic, GraphicsContext, Line/Ellipse/Polygon,
    Input List, and full number and text editing.
-4. Add an AUX-N assignment screen and test assignment with a real AUX controller.
+4. Test the AUX-N assignment screen with a real AUX controller and machine ECU.
 5. Test with an ECU that sends a simple IOP, and only then with a real machine.
 
 ## References

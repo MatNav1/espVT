@@ -1,4 +1,9 @@
 {
+  "device": {
+    "manufacturer_code": 1407,
+    "identity_number": "auto",
+    "model_identification_code": 1
+  },
   "buttons": [
     { "pin": 32, "label": "B1" },
     { "pin": 33, "label": "B2" },

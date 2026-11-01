@@ -281,7 +281,7 @@ int numeric_attribute(const std::shared_ptr<isobus::VTObject> &object, std::uint
     std::uint32_t raw_value = 0;
     if (object && object->get_attribute(attribute_id, raw_value))
     {
-        return std::clamp(static_cast<int>(raw_value), 1, 8);
+        return std::clamp(static_cast<int>(raw_value), 0, 8);
     }
     return fallback;
 }
@@ -903,6 +903,11 @@ void draw_polygon(RenderContext &context,
         }
     }
 
+    if (edge_width <= 0)
+    {
+        return;
+    }
+
     for (std::uint8_t index = 0; index + 1 < point_count; ++index)
     {
         const auto first = polygon->get_point(index);
@@ -947,6 +952,10 @@ void draw_ellipse(RenderContext &context,
             const int half_span = static_cast<int>(radius_x * std::sqrt(std::max(0.0, 1.0 - normalized_y * normalized_y)));
             lcd_panel::fill_rect(static_cast<int>(centre_x) - half_span, y + row, half_span * 2 + 1, 1, body_colour);
         }
+    }
+    if (edge_width <= 0)
+    {
+        return;
     }
     for (int degrees = 0; degrees < 360; ++degrees)
     {
@@ -1050,12 +1059,16 @@ void draw_meter(RenderContext &context,
     const int radius = std::max(1, width / 2 - 2);
     const int cx = x + width / 2;
     const int cy = y + width / 2;
-    const double start = meter->get_start_angle() * 2.0;
-    double sweep = meter->get_end_angle() * 2.0 - start;
+    // ISO VT meter angles use the opposite horizontal zero from the usual
+    // Cartesian convention used by cos()/sin(). Rotate them by 180 degrees so
+    // that object pools match the orientation shown by AgIsoVirtualTerminal.
+    const double raw_start = meter->get_start_angle() * 2.0;
+    double sweep = meter->get_end_angle() * 2.0 - raw_start;
     if (sweep <= 0.0)
     {
         sweep += 360.0;
     }
+    const double start = raw_start + 180.0;
     const bool clockwise = meter->get_option(isobus::OutputMeter::Options::DeflectionDirection);
     const std::uint16_t value = referenced_u16_value(context, meter->get_variable_reference(), meter->get_value());
     const double ratio = normalized_value(value, meter->get_min_value(), meter->get_max_value());
@@ -1158,20 +1171,14 @@ void render_object(RenderContext &context,
             const auto button = std::static_pointer_cast<isobus::Button>(object);
             const int width = object->get_width();
             const int height = object->get_height();
-            const std::uint16_t background = colour(context, object->get_background_color());
-            if (!button->get_option(isobus::Button::Options::TransparentBackground))
-            {
-                lcd_panel::fill_rect(x, y, width, height, background);
-            }
-            const int child_offset = button->get_option(isobus::Button::Options::NoBorder) ? 0 : 4;
             if (!button->get_option(isobus::Button::Options::Disabled))
             {
                 add_target(context, x, y, width, height, vt_scene_renderer::HitKind::Button, object->get_id(), button->get_key_code());
             }
-            render_children(context, object, x + child_offset, y + child_offset, depth + 1);
-            // The ISO button border is terminal-proprietary. AgIsoVirtualTerminal
-            // renders these controls without an extra rectangular frame; the
-            // object-pool children provide any intentional visual outline.
+            // AgIsoVirtualTerminal leaves the button face and its proprietary
+            // border transparent. The pool's child/sibling graphics provide the
+            // visible control, while the Button itself remains the touch target.
+            render_children(context, object, x, y, depth + 1);
             break;
         }
 
@@ -1334,14 +1341,15 @@ void render_object(RenderContext &context,
             // Every bit in LineArt is a paint/no-paint position. In particular,
             // 0x0000 means that the edge is invisible, which is used around the
             // icon graphics in several Kverneland object pools.
-            if (line_art_pattern(context, rectangle->get_line_attributes()) != 0U)
+            const int edge_width = line_width(context, rectangle->get_line_attributes());
+            if ((edge_width > 0) && (line_art_pattern(context, rectangle->get_line_attributes()) != 0U))
             {
                 draw_outline(x,
                              y,
                              width,
                              height,
                              edge_colour,
-                             line_width(context, rectangle->get_line_attributes()),
+                             edge_width,
                              rectangle->get_line_suppression_bitfield());
             }
             break;
@@ -1354,6 +1362,10 @@ void render_object(RenderContext &context,
             const int height = object->get_height();
             const std::uint16_t line_color = line_colour(context, line->get_line_attributes(), 0xFFFF);
             const int width_pixels = line_width(context, line->get_line_attributes());
+            if (width_pixels <= 0)
+            {
+                break;
+            }
             if (line->get_line_direction() == isobus::OutputLine::LineDirection::TopLeftToBottomRight)
             {
                 lcd_panel::draw_line(x, y, x + width, y + height, line_color, width_pixels);
@@ -2239,7 +2251,22 @@ void render_aux_page(std::vector<ScreenRect> &targets,
                    (entry.function_object_id == function.object_id);
         });
         const auto designator = aux_designator_text(working_sets, function.implement_name, function.object_id);
-        const char *assignment_label = assignment == catalog.assignments.end() ? "" : (assignment->confirmed ? "  OK" : "  ...");
+        char assignment_label[12] = {};
+        if (assignment != catalog.assignments.end())
+        {
+            if (assignment->confirmed)
+            {
+                std::snprintf(assignment_label, sizeof(assignment_label), "  OK");
+            }
+            else if (assignment->error_code != 0U)
+            {
+                std::snprintf(assignment_label, sizeof(assignment_label), "  E%02X", assignment->error_code);
+            }
+            else
+            {
+                std::snprintf(assignment_label, sizeof(assignment_label), "  ...");
+            }
+        }
         if (!designator.value.empty())
         {
             std::snprintf(line, sizeof(line), "%.20s%s", designator.value.c_str(), assignment_label);
@@ -2277,10 +2304,38 @@ void render_aux_page(std::vector<ScreenRect> &targets,
                    (function.implement_name == catalog.selected_implement_name) &&
                    (function.object_id == catalog.selected_function_object_id);
         });
+        bool single_assignment_conflict = false;
+        if (selected_function != catalog.functions.end())
+        {
+            single_assignment_conflict = std::any_of(catalog.assignments.begin(), catalog.assignments.end(),
+                                                     [&](const aux_n::Assignment &assignment) {
+                                                         if ((assignment.protocol != input.protocol) ||
+                                                             (assignment.device_name != input.device_name) ||
+                                                             (assignment.input_object_id != input.object_id) ||
+                                                             ((assignment.error_code != 0U) && !assignment.confirmed) ||
+                                                             ((assignment.implement_name == selected_function->implement_name) &&
+                                                              (assignment.function_object_id == selected_function->object_id)))
+                                                         {
+                                                             return false;
+                                                         }
+                                                         const auto assigned_function = std::find_if(
+                                                             catalog.functions.begin(), catalog.functions.end(),
+                                                             [&](const aux_n::FunctionDescriptor &function) {
+                                                                 return (function.protocol == assignment.protocol) &&
+                                                                        (function.implement_name == assignment.implement_name) &&
+                                                                        (function.object_id == assignment.function_object_id);
+                                                             });
+                                                         return selected_function->single_assignment || input.single_assignment ||
+                                                                ((assigned_function != catalog.functions.end()) &&
+                                                                 assigned_function->single_assignment);
+                                                     });
+        }
         const bool compatible = (selected_function != catalog.functions.end()) &&
+                                !selected_function->restricted &&
                                 (selected_function->protocol == input.protocol) &&
                                 (selected_function->function_type == input.function_type) &&
-                                (!selected_function->critical || input.critical);
+                                (!selected_function->critical || input.critical) &&
+                                !single_assignment_conflict;
         char line[48];
         const auto designator = aux_designator_text(working_sets, input.device_name, input.object_id);
         char fallback_label[48];
