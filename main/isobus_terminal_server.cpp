@@ -266,7 +266,7 @@ private:
     {
         ESP_LOGI(TAG, "Identify VT requested: terminal number %u",
                  static_cast<unsigned>(vt_scene_renderer::get_terminal_settings().terminal_number));
-        vt_scene_renderer::set_notice("IDENTYFIKACJA TERMINALA VT");
+        vt_scene_renderer::set_notice(ui_text::Id::NoticeIdentify);
         render_working_set(ui_active_working_set);
     }
 
@@ -408,7 +408,7 @@ public:
     {
         ESP_LOGW(TAG, "Suspending faulty working set 0x%016llx",
                  static_cast<unsigned long long>(client_name(working_set)));
-        vt_view::set_status("Working set suspended after a VT protocol error");
+        vt_view::set_status(ui_text::Id::StatusWorkingSetSuspended);
     }
 
     SupportedWideCharsErrorCode get_supported_wide_chars(std::uint8_t code_plane,
@@ -516,7 +516,7 @@ public:
     void transferred_object_pool_parse_start(std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> &working_set) const override
     {
         finish_object_pool_progress();
-        vt_view::set_status("Parsing ISOBUS object pool");
+        vt_view::set_status(ui_text::Id::StatusParsingPool);
         vt_view::on_object_pool_loaded(client_name(working_set), 0);
     }
 
@@ -1237,7 +1237,7 @@ bool start_local_ui()
         {
             working_set_render_task_handle = nullptr;
             ESP_LOGE(TAG, "Could not create VT scene render task");
-            vt_view::set_status("VT renderer startup failed");
+            vt_view::set_status(ui_text::Id::StatusRendererFailed);
             return false;
         }
     }
@@ -1269,7 +1269,7 @@ bool start()
     if (!terminal_control_function)
     {
         ESP_LOGE(TAG, "Could not create ISOBUS Virtual Terminal control function");
-        vt_view::set_status("ISOBUS address-claim setup failed");
+        vt_view::set_status(ui_text::Id::StatusAddressClaimFailed);
         return false;
     }
 
@@ -1309,11 +1309,11 @@ bool start()
     ESP_LOGI(TAG, "Virtual Terminal initialized, NAME=0x%016llx address=0x%02x",
              static_cast<unsigned long long>(terminal_control_function->get_NAME().get_full_name()),
              VT_PREFERRED_ADDRESS);
-    vt_view::set_status("ISOBUS VT and AUX-N assignment service ready");
+    vt_view::set_status(ui_text::Id::StatusVtReady);
     return true;
 #else
     ESP_LOGW(TAG, "AgIsoStack++ adapter disabled");
-    vt_view::set_status("CAN smoke test active; AgIsoStack++ disabled");
+    vt_view::set_status(ui_text::Id::StatusCanSmokeTest);
     return false;
 #endif
 }
@@ -1804,15 +1804,15 @@ bool on_touch_pressed(std::uint16_t x, std::uint16_t y)
                 vt_scene_renderer::apply_terminal_action(target.terminal_action);
                 const bool saved = save_terminal_settings();
                 result = !terminal_server || configure_language_and_units(true);
-                vt_scene_renderer::set_notice((result && saved) ? "USTAWIENIA ZAPISANE I WYSLANE DO SIECI" :
-                                                                    "USTAWIENIE ZMIENIONE, BLAD ZAPISU LUB WYSYLANIA");
+                vt_scene_renderer::set_notice((result && saved) ? ui_text::Id::NoticeSettingsSent :
+                                                                    ui_text::Id::NoticeSettingsFailed);
                 break;
             }
             case vt_scene_renderer::TerminalAction::CycleTerminalNumber:
                 vt_scene_renderer::apply_terminal_action(target.terminal_action);
                 result = save_terminal_settings();
-                vt_scene_renderer::set_notice(result ? "NUMER VT ZAPISANY, URUCHOM TERMINAL PONOWNIE" :
-                                                        "NUMER ZMIENIONY, ALE ZAPIS NIE UDAL SIE");
+                vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeVtNumberSaved :
+                                                        ui_text::Id::NoticeVtNumberFailed);
                 break;
             case vt_scene_renderer::TerminalAction::CycleDataMaskSize:
                 vt_scene_renderer::apply_terminal_action(target.terminal_action);
@@ -1821,8 +1821,8 @@ bool on_touch_pressed(std::uint16_t x, std::uint16_t y)
                 {
                     result = object_pool_store::erase_all();
                 }
-                vt_scene_renderer::set_notice(result ? "ROZMIAR ZAPISANY; URUCHOM TERMINAL PONOWNIE" :
-                                                        "ROZMIAR ZMIENIONY, ALE ZAPIS LUB USUNIECIE PUL NIE UDALO SIE");
+                vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeAreaSaved :
+                                                        ui_text::Id::NoticeAreaFailed);
                 break;
             case vt_scene_renderer::TerminalAction::DecreaseControlVolume:
             case vt_scene_renderer::TerminalAction::IncreaseControlVolume:
@@ -1836,44 +1836,44 @@ bool on_touch_pressed(std::uint16_t x, std::uint16_t y)
                 vt_audio::set_alarm_volume(settings.alarm_volume);
                 vt_audio::set_muted(settings.audio_muted);
                 result = save_terminal_settings();
-                vt_scene_renderer::set_notice(result ? "USTAWIENIA DZWIEKU ZAPISANE" : "BLAD ZAPISU USTAWIEN DZWIEKU");
+                vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeAudioSaved : ui_text::Id::NoticeAudioFailed);
                 break;
             }
             case vt_scene_renderer::TerminalAction::ToggleAuxOLegacy:
                 vt_scene_renderer::apply_terminal_action(target.terminal_action);
                 result = save_terminal_settings();
-                vt_scene_renderer::set_notice(result ? "TRYB AUX ZAPISANY - URUCHOM TERMINAL PONOWNIE" :
-                                                        "NIE UDALO SIE ZAPISAC TRYBU AUX");
+                vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeAuxModeSaved :
+                                                        ui_text::Id::NoticeAuxModeFailed);
                 break;
             case vt_scene_renderer::TerminalAction::TestControlAudio:
                 vt_audio::play_test_control();
-                vt_scene_renderer::set_notice(vt_audio::is_muted() ? "DZWIEK JEST WYCISZONY" : "TEST SYGNALU");
+                vt_scene_renderer::set_notice(vt_audio::is_muted() ? ui_text::Id::NoticeMuted : ui_text::Id::TestSignal);
                 break;
             case vt_scene_renderer::TerminalAction::TestAlarmAudio:
                 vt_audio::play_test_alarm();
-                vt_scene_renderer::set_notice(vt_audio::is_muted() ? "DZWIEK JEST WYCISZONY" : "TEST ALARMU");
+                vt_scene_renderer::set_notice(vt_audio::is_muted() ? ui_text::Id::NoticeMuted : ui_text::Id::TestAlarm);
                 break;
             case vt_scene_renderer::TerminalAction::RefreshNetwork:
                 result = can_monitor::request_address_claims();
-                vt_scene_renderer::set_notice(result ? "WYSZUKIWANIE URZADZEN URUCHOMIONE" : "NIE UDALO SIE ODSWIEZYC SIECI");
+                vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeRefreshStarted : ui_text::Id::NoticeRefreshFailed);
                 break;
             case vt_scene_renderer::TerminalAction::EraseActivePool:
                 result = working_set && object_pool_store::erase_all(client_name(working_set));
-                vt_scene_renderer::set_notice(result ? "ZAPISANA PULA AKTYWNEJ MASZYNY USUNIETA" : "BRAK PULI LUB BLAD USUWANIA");
+                vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeActivePoolDeleted : ui_text::Id::NoticeActivePoolFailed);
                 break;
             case vt_scene_renderer::TerminalAction::EraseAllPools:
                 result = object_pool_store::erase_all();
-                vt_scene_renderer::set_notice(result ? "WSZYSTKIE ZAPISANE PULE USUNIETE" : "BLAD USUWANIA PUL");
+                vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeAllPoolsDeleted : ui_text::Id::NoticeAllPoolsFailed);
                 break;
             case vt_scene_renderer::TerminalAction::ClearAuxAssignments:
                 result = working_set && working_set->get_control_function() &&
                          aux_n::unassign_all(working_set->get_control_function(), true);
-                vt_scene_renderer::set_notice(result ? "POLECENIE USUNIECIA AUX-N WYSLANE" : "BRAK AKTYWNEJ MASZYNY LUB BLAD AUX-N");
+                vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeAuxUnassignAllSent : ui_text::Id::NoticeAuxUnassignAllFailed);
                 break;
             case vt_scene_renderer::TerminalAction::UnassignSelectedAux:
                 result = aux_n::unassign_selected();
-                vt_scene_renderer::set_notice(result ? "USUNIECIE WYBRANEGO PRZYPISANIA WYSLANE" :
-                                                        "NAJPIERW WYBIERZ FUNKCJE AUX-N");
+                vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeAuxUnassignSent :
+                                                        ui_text::Id::NoticeAuxSelectFirst);
                 break;
             case vt_scene_renderer::TerminalAction::ToggleAuxLearn:
             {
@@ -1882,13 +1882,13 @@ bool on_touch_pressed(std::uint16_t x, std::uint16_t y)
                 {
                     aux_n::cancel_learning();
                     result = true;
-                    vt_scene_renderer::set_notice("UCZENIE AUX-N ANULOWANE");
+                    vt_scene_renderer::set_notice(ui_text::Id::NoticeAuxLearnCancelled);
                 }
                 else
                 {
                     result = aux_n::begin_learning();
-                    vt_scene_renderer::set_notice(result ? "PORUSZ WYBRANYM PRZYCISKIEM AUX-N" :
-                                                            "WYBIERZ FUNKCJE I PODLACZ AUX-N");
+                    vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeAuxMoveInput :
+                                                            ui_text::Id::NoticeAuxLearnFailed);
                 }
                 break;
             }
@@ -1914,14 +1914,14 @@ bool on_touch_pressed(std::uint16_t x, std::uint16_t y)
         if (target.kind == vt_scene_renderer::HitKind::AuxFunction)
         {
             result = aux_n::select_function(protocol, target.working_set_name, target.object_id);
-            vt_scene_renderer::set_notice(result ? "FUNKCJA WYBRANA - DOTKNIJ ZGODNEGO WEJSCIA" :
-                                                   "NIE UDALO SIE WYBRAC FUNKCJI AUX");
+            vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeAuxFunctionSelected :
+                                                   ui_text::Id::NoticeAuxFunctionFailed);
         }
         else
         {
             result = aux_n::assign_selected(protocol, target.working_set_name, target.object_id);
-            vt_scene_renderer::set_notice(result ? "PRZYPISANIE AUX WYSLANE" :
-                                                   "WYBIERZ FUNKCJE I ZGODNE WEJSCIE AUX");
+            vt_scene_renderer::set_notice(result ? ui_text::Id::NoticeAuxAssignmentSent :
+                                                   ui_text::Id::NoticeAuxAssignmentFailed);
         }
         render_working_set(terminal_server ? terminal_server->get_ui_active_working_set() : nullptr);
         return result;

@@ -1,6 +1,8 @@
 #include "lcd_panel.hpp"
 
 #include "board_pins.hpp"
+#include "lcd_backend.hpp"
+#include "vt_font.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,9 +11,6 @@
 #include <cstdlib>
 
 #include "esp_check.h"
-#include "esp_attr.h"
-#include "esp_lcd_panel_ops.h"
-#include "esp_lcd_panel_rgb.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -21,21 +20,20 @@ namespace
 constexpr char TAG[] = "lcd";
 constexpr std::size_t FRAME_PIXELS = static_cast<std::size_t>(board::LCD_WIDTH) * board::LCD_HEIGHT;
 
-extern "C"
-{
-extern const std::uint8_t vt_font_asset_start[] asm("_binary_vt_font_roboto_mono_bin_start");
-extern const std::uint8_t vt_font_asset_end[] asm("_binary_vt_font_roboto_mono_bin_end");
-}
-
-esp_lcd_panel_handle_t panel = nullptr;
-std::array<std::uint16_t *, 2> frame_buffers = {};
 SemaphoreHandle_t frame_mutex = nullptr;
-SemaphoreHandle_t frame_complete_semaphore = nullptr;
-std::size_t drawing_frame_index = 1;
+std::uint16_t *frame = nullptr;
 bool frame_in_progress = false;
 
 struct ViewTransform
 {
+    // Drawing area all coordinates are relative to: the whole LCD, or the
+    // centered 1024x600 window used by the menu and status screens.
+    int area_x = 0;
+    int area_y = 0;
+    int area_width = board::LCD_WIDTH;
+    int area_height = board::LCD_HEIGHT;
+    int area_scale_numerator = 1;
+    int area_scale_denominator = 1;
     int offset_x = 0;
     int offset_y = 0;
     int scale_numerator = 1;
@@ -50,95 +48,44 @@ struct ViewTransform
 
 ViewTransform view_transform;
 
-struct FontAssetSize
+// Reads one UTF-8 sequence and advances text past it. Malformed input yields '?'.
+std::uint16_t next_utf8_codepoint(const unsigned char *&text)
 {
-    std::uint16_t width = 0;
-    std::uint16_t height = 0;
-    std::uint32_t offset = 0;
-    std::uint32_t stride = 0;
-};
-
-std::uint16_t read_u16(const std::uint8_t *data)
-{
-    return static_cast<std::uint16_t>(data[0]) |
-           (static_cast<std::uint16_t>(data[1]) << 8U);
-}
-
-std::uint32_t read_u32(const std::uint8_t *data)
-{
-    return static_cast<std::uint32_t>(data[0]) |
-           (static_cast<std::uint32_t>(data[1]) << 8U) |
-           (static_cast<std::uint32_t>(data[2]) << 16U) |
-           (static_cast<std::uint32_t>(data[3]) << 24U);
-}
-
-bool font_asset_valid()
-{
-    return ((vt_font_asset_end - vt_font_asset_start) >= 12) &&
-           (std::memcmp(vt_font_asset_start, "VTF1", 4) == 0) &&
-           (read_u16(vt_font_asset_start + 4) == 1);
-}
-
-int font_glyph_index(std::uint16_t codepoint)
-{
-    if (!font_asset_valid())
+    const unsigned char lead = *text++;
+    if (lead < 0x80U)
     {
-        return -1;
+        return lead;
     }
-    const int glyph_count = read_u16(vt_font_asset_start + 6);
-    const std::uint8_t *codepoints = vt_font_asset_start + 12;
-    int low = 0;
-    int high = glyph_count - 1;
-    while (low <= high)
+    int continuation = 0;
+    std::uint32_t codepoint = 0;
+    if ((lead & 0xE0U) == 0xC0U)
     {
-        const int middle = low + (high - low) / 2;
-        const std::uint16_t value = read_u16(codepoints + middle * 2);
-        if (value == codepoint)
-        {
-            return middle;
-        }
-        if (value < codepoint)
-        {
-            low = middle + 1;
-        }
-        else
-        {
-            high = middle - 1;
-        }
+        continuation = 1;
+        codepoint = lead & 0x1FU;
     }
-    return -1;
-}
-
-bool select_font_size(int requested_width, int requested_height, FontAssetSize &selected)
-{
-    if (!font_asset_valid())
+    else if ((lead & 0xF0U) == 0xE0U)
     {
-        return false;
+        continuation = 2;
+        codepoint = lead & 0x0FU;
     }
-    const int glyph_count = read_u16(vt_font_asset_start + 6);
-    const int size_count = read_u16(vt_font_asset_start + 8);
-    const std::uint8_t *entries = vt_font_asset_start + 12 + glyph_count * 2;
-    int best_score = 0x7FFFFFFF;
-    for (int index = 0; index < size_count; ++index)
+    else if ((lead & 0xF8U) == 0xF0U)
     {
-        const std::uint8_t *entry = entries + index * 12;
-        FontAssetSize candidate = {
-            .width = read_u16(entry),
-            .height = read_u16(entry + 2),
-            .offset = read_u32(entry + 4),
-            .stride = read_u32(entry + 8),
-        };
-        const int score = std::abs(static_cast<int>(candidate.width) - requested_width) * 2 +
-                          std::abs(static_cast<int>(candidate.height) - requested_height);
-        if (score < best_score)
-        {
-            best_score = score;
-            selected = candidate;
-        }
+        continuation = 3;
+        codepoint = lead & 0x07U;
     }
-    return (selected.width > 0) &&
-           (selected.height > 0) &&
-           (selected.offset + selected.stride <= static_cast<std::uint32_t>(vt_font_asset_end - vt_font_asset_start));
+    else
+    {
+        return '?';
+    }
+    for (int index = 0; index < continuation; ++index)
+    {
+        if ((*text & 0xC0U) != 0x80U)
+        {
+            return '?';
+        }
+        codepoint = (codepoint << 6U) | (*text++ & 0x3FU);
+    }
+    return codepoint <= 0xFFFFU ? static_cast<std::uint16_t>(codepoint) : '?';
 }
 
 std::uint16_t decode_character(std::uint8_t value, lcd_panel::TextEncoding encoding)
@@ -190,33 +137,16 @@ std::uint16_t decode_character(std::uint8_t value, lcd_panel::TextEncoding encod
 
 int transform_x(int x)
 {
-    return view_transform.offset_x + (x * view_transform.scale_numerator) / view_transform.scale_denominator;
+    const int area_relative = view_transform.offset_x + (x * view_transform.scale_numerator) / view_transform.scale_denominator;
+    return view_transform.area_x +
+           (area_relative * view_transform.area_scale_numerator) / view_transform.area_scale_denominator;
 }
 
 int transform_y(int y)
 {
-    return view_transform.offset_y + (y * view_transform.scale_y_numerator) / view_transform.scale_y_denominator;
-}
-
-IRAM_ATTR bool on_frame_complete(esp_lcd_panel_handle_t,
-                                 const esp_lcd_rgb_panel_event_data_t *,
-                                 void *)
-{
-    if (frame_complete_semaphore == nullptr)
-    {
-        return false;
-    }
-
-    BaseType_t task_woken = pdFALSE;
-    xSemaphoreGiveFromISR(frame_complete_semaphore, &task_woken);
-    return task_woken == pdTRUE;
-}
-
-void clear_frame_complete_notification()
-{
-    while (xSemaphoreTake(frame_complete_semaphore, 0) == pdTRUE)
-    {
-    }
+    const int area_relative = view_transform.offset_y + (y * view_transform.scale_y_numerator) / view_transform.scale_y_denominator;
+    return view_transform.area_y +
+           (area_relative * view_transform.area_scale_numerator) / view_transform.area_scale_denominator;
 }
 
 const std::uint8_t *glyph_for(char character)
@@ -342,7 +272,7 @@ void write_pixel(int x, int y, std::uint16_t color)
     }
 
     const std::size_t offset = static_cast<std::size_t>(y) * board::LCD_WIDTH + x;
-    frame_buffers[drawing_frame_index][offset] = color;
+    frame[offset] = color;
 }
 
 std::uint16_t blend_rgb565(std::uint16_t background, std::uint16_t foreground, std::uint8_t alpha)
@@ -351,14 +281,14 @@ std::uint16_t blend_rgb565(std::uint16_t background, std::uint16_t foreground, s
     {
         return background;
     }
-    if (alpha >= 3)
+    if (alpha == 255)
     {
         return foreground;
     }
-    const int inverse = 3 - alpha;
-    const int red = (((background >> 11U) & 0x1FU) * inverse + ((foreground >> 11U) & 0x1FU) * alpha + 1) / 3;
-    const int green = (((background >> 5U) & 0x3FU) * inverse + ((foreground >> 5U) & 0x3FU) * alpha + 1) / 3;
-    const int blue = ((background & 0x1FU) * inverse + (foreground & 0x1FU) * alpha + 1) / 3;
+    const int inverse = 255 - alpha;
+    const int red = (((background >> 11U) & 0x1FU) * inverse + ((foreground >> 11U) & 0x1FU) * alpha + 127) / 255;
+    const int green = (((background >> 5U) & 0x3FU) * inverse + ((foreground >> 5U) & 0x3FU) * alpha + 127) / 255;
+    const int blue = ((background & 0x1FU) * inverse + (foreground & 0x1FU) * alpha + 127) / 255;
     return static_cast<std::uint16_t>((red << 11U) | (green << 5U) | blue);
 }
 
@@ -383,73 +313,51 @@ void fill_rgb565(std::uint16_t *destination, std::size_t count, std::uint16_t co
     }
 }
 
-bool draw_asset_glyph(int x,
-                      int y,
-                      int character_width,
-                      int character_height,
-                      std::uint16_t codepoint,
-                      std::uint16_t color,
-                      bool bold,
-                      const FontAssetSize &font_size)
+// Draws one character cell. The glyph is rasterized at the physical size of the
+// transformed cell, so scaled VT content stays sharp.
+bool draw_glyph(int x, int y, int character_width, int character_height,
+                std::uint16_t codepoint, std::uint16_t color, bool bold)
 {
-    const int glyph_index = font_glyph_index(codepoint);
-    if (glyph_index < 0)
+    const int left = transform_x(x);
+    const int top = transform_y(y);
+    const int width = transform_x(x + character_width) - left;
+    const int height = transform_y(y + character_height) - top;
+    if ((width <= 0) || (height <= 0))
+    {
+        return true;
+    }
+    const vt_font::Glyph *glyph = vt_font::get(codepoint, width, height);
+    if (glyph == nullptr)
     {
         return false;
     }
 
-    const std::uint64_t glyph_offset = static_cast<std::uint64_t>(font_size.offset) +
-                                       static_cast<std::uint64_t>(glyph_index) * font_size.stride;
-    if (glyph_offset + font_size.stride > static_cast<std::uint64_t>(vt_font_asset_end - vt_font_asset_start))
+    const int bold_extra = bold ? std::max(1, transform_x(x + 1) - transform_x(x)) : 0;
+    const int clip_left = std::max(0, view_transform.clip_x);
+    const int clip_top = std::max(0, view_transform.clip_y);
+    const int clip_right = std::min(board::LCD_WIDTH, view_transform.clip_x + view_transform.clip_width);
+    const int clip_bottom = std::min(board::LCD_HEIGHT, view_transform.clip_y + view_transform.clip_height);
+    for (int row = std::max(0, clip_top - top); row < height; ++row)
     {
-        return false;
-    }
-    const std::uint8_t *glyph = vt_font_asset_start + glyph_offset;
-    for (int row = 0; row < character_height; ++row)
-    {
-        const int physical_top = std::max({ 0, transform_y(y + row), view_transform.clip_y });
-        const int physical_bottom = std::min({ board::LCD_HEIGHT,
-                                               transform_y(y + row + 1),
-                                               view_transform.clip_y + view_transform.clip_height });
-        if (physical_top >= physical_bottom)
+        const int physical_y = top + row;
+        if (physical_y >= clip_bottom)
         {
-            continue;
+            break;
         }
-        const int source_y = std::min<int>(font_size.height - 1, row * font_size.height / character_height);
-        for (int column = 0; column < character_width; ++column)
+        const std::uint8_t *coverage = glyph->alpha + static_cast<std::size_t>(row) * width;
+        std::uint16_t *line = frame + static_cast<std::size_t>(physical_y) * board::LCD_WIDTH;
+        for (int column = 0; column < width; ++column)
         {
-            const int source_x = std::min<int>(font_size.width - 1, column * font_size.width / character_width);
-            const int source_index = source_y * font_size.width + source_x;
-            const std::uint8_t alpha = static_cast<std::uint8_t>((glyph[source_index / 4] >> ((source_index % 4) * 2)) & 0x03U);
+            const std::uint8_t alpha = coverage[column];
             if (alpha == 0)
             {
                 continue;
             }
-            const int logical_right = x + column + ((bold && (column + 1 < character_width)) ? 2 : 1);
-            const int physical_left = std::max({ 0, transform_x(x + column), view_transform.clip_x });
-            const int physical_right = std::min({ board::LCD_WIDTH,
-                                                  transform_x(logical_right),
-                                                  view_transform.clip_x + view_transform.clip_width });
-            if (physical_left >= physical_right)
+            const int physical_left = std::max(clip_left, left + column);
+            const int physical_right = std::min(clip_right, left + column + 1 + bold_extra);
+            for (int physical_x = physical_left; physical_x < physical_right; ++physical_x)
             {
-                continue;
-            }
-            for (int physical_y = physical_top; physical_y < physical_bottom; ++physical_y)
-            {
-                auto *destination = frame_buffers[drawing_frame_index] +
-                                    static_cast<std::size_t>(physical_y) * board::LCD_WIDTH + physical_left;
-                if (alpha >= 3)
-                {
-                    std::fill_n(destination, physical_right - physical_left, color);
-                }
-                else
-                {
-                    for (int physical_x = physical_left; physical_x < physical_right; ++physical_x)
-                    {
-                        *destination = blend_rgb565(*destination, color, alpha);
-                        ++destination;
-                    }
-                }
+                line[physical_x] = blend_rgb565(line[physical_x], color, alpha);
             }
         }
     }
@@ -478,7 +386,7 @@ esp_err_t fill_rect_raw(int x, int y, int width, int height, std::uint16_t color
 
     for (int row = y_start; row < y_end; ++row)
     {
-        std::uint16_t *line = frame_buffers[drawing_frame_index] + static_cast<std::size_t>(row) * board::LCD_WIDTH + x_start;
+        std::uint16_t *line = frame + static_cast<std::size_t>(row) * board::LCD_WIDTH + x_start;
         fill_rgb565(line, static_cast<std::size_t>(x_end - x_start), color);
     }
     return ESP_OK;
@@ -489,87 +397,24 @@ namespace lcd_panel
 {
 esp_err_t init()
 {
-    if (panel != nullptr)
+    if (frame_mutex != nullptr)
     {
         return ESP_OK;
     }
 
-    esp_lcd_rgb_panel_config_t config = {};
-    config.clk_src = LCD_CLK_SRC_DEFAULT;
-    config.timings.pclk_hz = 30 * 1000 * 1000;
-    config.timings.h_res = board::LCD_WIDTH;
-    config.timings.v_res = board::LCD_HEIGHT;
-    config.timings.hsync_pulse_width = 162;
-    config.timings.hsync_back_porch = 152;
-    config.timings.hsync_front_porch = 48;
-    config.timings.vsync_pulse_width = 45;
-    config.timings.vsync_back_porch = 13;
-    config.timings.vsync_front_porch = 3;
-    config.timings.flags.pclk_active_neg = true;
-    config.data_width = 16;
-    config.bits_per_pixel = 16;
-    config.num_fbs = 2;
-    config.bounce_buffer_size_px = board::LCD_WIDTH * 10;
-    config.dma_burst_size = 64;
-    config.sram_trans_align = 4;
-    config.psram_trans_align = 64;
-    config.hsync_gpio_num = GPIO_NUM_46;
-    config.vsync_gpio_num = GPIO_NUM_3;
-    config.de_gpio_num = GPIO_NUM_5;
-    config.pclk_gpio_num = GPIO_NUM_7;
-    config.disp_gpio_num = -1;
-    const int data_pins[] = {
-        GPIO_NUM_14, GPIO_NUM_38, GPIO_NUM_18, GPIO_NUM_17,
-        GPIO_NUM_10, GPIO_NUM_39, GPIO_NUM_0, GPIO_NUM_45,
-        GPIO_NUM_48, GPIO_NUM_47, GPIO_NUM_21, GPIO_NUM_1,
-        GPIO_NUM_2, GPIO_NUM_42, GPIO_NUM_41, GPIO_NUM_40,
-    };
-    std::copy(std::begin(data_pins), std::end(data_pins), std::begin(config.data_gpio_nums));
-    config.flags.fb_in_psram = true;
-
-    ESP_RETURN_ON_ERROR(esp_lcd_new_rgb_panel(&config, &panel), TAG, "RGB panel create failed");
-
+    ESP_RETURN_ON_ERROR(lcd_backend::init(), TAG, "LCD init failed");
     frame_mutex = xSemaphoreCreateMutex();
-    frame_complete_semaphore = xSemaphoreCreateBinary();
-    if ((frame_mutex == nullptr) || (frame_complete_semaphore == nullptr))
+    if (frame_mutex == nullptr)
     {
-        ESP_LOGE(TAG, "RGB frame synchronization allocation failed");
+        ESP_LOGE(TAG, "LCD frame mutex allocation failed");
         return ESP_ERR_NO_MEM;
     }
-
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(panel), TAG, "RGB panel reset failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(panel), TAG, "RGB panel init failed");
-
-    void *first = nullptr;
-    void *second = nullptr;
-    const esp_err_t result = esp_lcd_rgb_panel_get_frame_buffer(panel, 2, &first, &second);
-    if (result != ESP_OK)
-    {
-        ESP_LOGE(TAG, "RGB framebuffer lookup failed: %s", esp_err_to_name(result));
-        return result;
-    }
-
-    frame_buffers[0] = static_cast<std::uint16_t *>(first);
-    frame_buffers[1] = static_cast<std::uint16_t *>(second);
-
-    std::fill_n(frame_buffers[0], FRAME_PIXELS, 0x0000);
-    std::fill_n(frame_buffers[1], FRAME_PIXELS, 0x0000);
-
-    const esp_lcd_rgb_panel_event_callbacks_t callbacks = {
-        .on_bounce_frame_finish = on_frame_complete,
-    };
-    ESP_RETURN_ON_ERROR(esp_lcd_rgb_panel_register_event_callbacks(panel, &callbacks, nullptr), TAG,
-                        "RGB frame callback registration failed");
-
-    ESP_LOGI(TAG, "RGB LCD ready: %dx%d, 30 MHz, double RGB565 framebuffer with bounce DMA",
-             board::LCD_WIDTH, board::LCD_HEIGHT);
     return ESP_OK;
 }
 
 bool is_ready()
 {
-    return (panel != nullptr) && (frame_buffers[0] != nullptr) && (frame_buffers[1] != nullptr) &&
-           (frame_mutex != nullptr) && (frame_complete_semaphore != nullptr);
+    return (frame_mutex != nullptr) && (lcd_backend::draw_buffer() != nullptr);
 }
 
 esp_err_t begin_frame()
@@ -584,9 +429,9 @@ esp_err_t begin_frame()
         return ESP_ERR_TIMEOUT;
     }
 
+    frame = lcd_backend::draw_buffer();
     frame_in_progress = true;
-    reset_view_transform();
-    reset_clip_rect();
+    use_full_screen();
     return ESP_OK;
 }
 
@@ -627,18 +472,52 @@ void reset_view_transform()
 
 void set_clip_rect(int x, int y, int width, int height)
 {
-    view_transform.clip_x = x;
-    view_transform.clip_y = y;
-    view_transform.clip_width = std::max(0, width);
-    view_transform.clip_height = std::max(0, height);
+    view_transform.clip_x = to_lcd_x(x);
+    view_transform.clip_y = to_lcd_y(y);
+    view_transform.clip_width = std::max(0, to_lcd_x(x + width) - view_transform.clip_x);
+    view_transform.clip_height = std::max(0, to_lcd_y(y + height) - view_transform.clip_y);
 }
 
 void reset_clip_rect()
 {
-    view_transform.clip_x = 0;
-    view_transform.clip_y = 0;
-    view_transform.clip_width = board::LCD_WIDTH;
-    view_transform.clip_height = board::LCD_HEIGHT;
+    view_transform.clip_x = view_transform.area_x;
+    view_transform.clip_y = view_transform.area_y;
+    view_transform.clip_width = view_transform.area_width;
+    view_transform.clip_height = view_transform.area_height;
+}
+
+void use_full_screen()
+{
+    view_transform.area_x = 0;
+    view_transform.area_y = 0;
+    view_transform.area_width = board::LCD_WIDTH;
+    view_transform.area_height = board::LCD_HEIGHT;
+    view_transform.area_scale_numerator = 1;
+    view_transform.area_scale_denominator = 1;
+    reset_view_transform();
+    reset_clip_rect();
+}
+
+void use_ui_area()
+{
+    view_transform.area_x = board::UI_X;
+    view_transform.area_y = board::UI_Y;
+    view_transform.area_width = board::UI_SCREEN_WIDTH;
+    view_transform.area_height = board::UI_SCREEN_HEIGHT;
+    view_transform.area_scale_numerator = board::UI_SCALE_NUMERATOR;
+    view_transform.area_scale_denominator = board::UI_SCALE_DENOMINATOR;
+    reset_view_transform();
+    reset_clip_rect();
+}
+
+int to_lcd_x(int x)
+{
+    return view_transform.area_x + (x * view_transform.area_scale_numerator) / view_transform.area_scale_denominator;
+}
+
+int to_lcd_y(int y)
+{
+    return view_transform.area_y + (y * view_transform.area_scale_numerator) / view_transform.area_scale_denominator;
 }
 
 esp_err_t present()
@@ -648,26 +527,7 @@ esp_err_t present()
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t result = esp_lcd_panel_draw_bitmap(panel,
-                                                 0,
-                                                 0,
-                                                 board::LCD_WIDTH,
-                                                 board::LCD_HEIGHT,
-                                                 frame_buffers[drawing_frame_index]);
-    if (result == ESP_OK)
-    {
-        // Wait for a complete bounce-buffer frame after requesting the buffer switch.
-        clear_frame_complete_notification();
-        if (xSemaphoreTake(frame_complete_semaphore, pdMS_TO_TICKS(250)) != pdTRUE)
-        {
-            ESP_LOGW(TAG, "RGB frame completion timed out");
-            result = ESP_ERR_TIMEOUT;
-        }
-    }
-    if (result == ESP_OK)
-    {
-        drawing_frame_index ^= 1U;
-    }
+    const esp_err_t result = lcd_backend::present();
     frame_in_progress = false;
     xSemaphoreGive(frame_mutex);
     return result;
@@ -680,7 +540,7 @@ esp_err_t fill(std::uint16_t color)
         return ESP_ERR_INVALID_STATE;
     }
 
-    fill_rgb565(frame_buffers[drawing_frame_index], FRAME_PIXELS, color);
+    fill_rgb565(frame, FRAME_PIXELS, color);
     return ESP_OK;
 }
 
@@ -697,8 +557,13 @@ esp_err_t fill_rect(int x, int y, int width, int height, std::uint16_t color)
                          color);
 }
 
-esp_err_t draw_rgb565(int x, int y, int width, int height, const std::uint16_t *pixels)
+esp_err_t draw_rgb565(int x, int y, int width, int height, const std::uint16_t *pixels,
+                      int source_width, int source_height)
 {
+    // The image fills the logical width x height rectangle; its pixel data may
+    // have a different resolution (source_width x source_height, 0 = same).
+    source_width = source_width > 0 ? source_width : width;
+    source_height = source_height > 0 ? source_height : height;
     if (!is_ready() || !frame_in_progress)
     {
         return ESP_ERR_INVALID_STATE;
@@ -725,24 +590,24 @@ esp_err_t draw_rgb565(int x, int y, int width, int height, const std::uint16_t *
 
     for (int row = y_start; row < y_end; ++row)
     {
-        std::uint16_t *destination = frame_buffers[drawing_frame_index] + static_cast<std::size_t>(row) * board::LCD_WIDTH + x_start;
-        const int source_y = std::clamp(((row - transformed_y) * height) / std::max(1, transformed_height), 0, height - 1);
-        if ((transformed_width == width) && (x_start == transformed_x) && (x_end == transformed_right))
+        std::uint16_t *destination = frame + static_cast<std::size_t>(row) * board::LCD_WIDTH + x_start;
+        const int source_y = std::clamp(((row - transformed_y) * source_height) / std::max(1, transformed_height), 0, source_height - 1);
+        if ((transformed_width == source_width) && (x_start == transformed_x) && (x_end == transformed_right))
         {
             std::memcpy(destination,
-                        pixels + static_cast<std::size_t>(source_y) * width,
-                        static_cast<std::size_t>(width) * sizeof(std::uint16_t));
+                        pixels + static_cast<std::size_t>(source_y) * source_width,
+                        static_cast<std::size_t>(source_width) * sizeof(std::uint16_t));
             continue;
         }
         std::uint32_t source_x_fixed = static_cast<std::uint32_t>(
-            (static_cast<std::uint64_t>(x_start - transformed_x) * width << 16U) /
+            (static_cast<std::uint64_t>(x_start - transformed_x) * source_width << 16U) /
             std::max(1, transformed_width));
         const std::uint32_t source_x_step = static_cast<std::uint32_t>(
-            (static_cast<std::uint64_t>(width) << 16U) / std::max(1, transformed_width));
+            (static_cast<std::uint64_t>(source_width) << 16U) / std::max(1, transformed_width));
         for (int column = x_start; column < x_end; ++column)
         {
-            const int source_x = std::min<int>(width - 1, source_x_fixed >> 16U);
-            *destination++ = pixels[static_cast<std::size_t>(source_y) * width + source_x];
+            const int source_x = std::min<int>(source_width - 1, source_x_fixed >> 16U);
+            *destination++ = pixels[static_cast<std::size_t>(source_y) * source_width + source_x];
             source_x_fixed += source_x_step;
         }
     }
@@ -760,8 +625,9 @@ void draw_line(int x0, int y0, int x1, int y1, std::uint16_t color, int thicknes
     y0 = transform_y(y0);
     x1 = transform_x(x1);
     y1 = transform_y(y1);
-    thickness = std::max(1, (thickness * view_transform.scale_numerator + view_transform.scale_denominator - 1) /
-                              view_transform.scale_denominator);
+    const int numerator = view_transform.scale_numerator * view_transform.area_scale_numerator;
+    const int denominator = view_transform.scale_denominator * view_transform.area_scale_denominator;
+    thickness = std::max(1, (thickness * numerator + denominator - 1) / denominator);
 
     const int delta_x = std::abs(x1 - x0);
     const int delta_y = -std::abs(y1 - y0);
@@ -798,34 +664,17 @@ void draw_line(int x0, int y0, int x1, int y1, std::uint16_t color, int thicknes
 
 void draw_text(int x, int y, int scale, const char *text, std::uint16_t color)
 {
-    if (!is_ready() || !frame_in_progress || (text == nullptr) || (scale <= 0))
+    if ((text == nullptr) || (scale <= 0))
     {
         return;
     }
 
-    int cursor_x = x;
-    for (const char *character = text; *character != '\0'; ++character)
-    {
-        char upper = *character;
-        if ((upper >= 'a') && (upper <= 'z'))
-        {
-            upper = static_cast<char>(upper - ('a' - 'A'));
-        }
-
-        const std::uint8_t *glyph = glyph_for(upper);
-        for (int column = 0; column < 5; ++column)
-        {
-            for (int row = 0; row < 7; ++row)
-            {
-                if ((glyph[column] & (1U << row)) == 0U)
-                {
-                    continue;
-                }
-                fill_rect(cursor_x + column * scale, y + row * scale, scale, scale, color);
-            }
-        }
-        cursor_x += 6 * scale;
-    }
+    // Cells 6 px wide per scale step and tall enough for accents and descenders;
+    // the capitals cover the 5x7 box of the former bitmap font at (x, y), so
+    // layouts keep their positions.
+    const int cell_height = (23 * scale + 1) / 2;
+    const int capital_top = (cell_height * 182 + 500) / 1000;
+    draw_text_sized(x, y - capital_top, 6 * scale, cell_height, text, color, false, false, false, TextEncoding::UTF8);
 }
 
 void draw_text_sized(int x,
@@ -846,14 +695,15 @@ void draw_text_sized(int x,
     }
 
     int cursor_x = x;
-    FontAssetSize font_size;
-    const bool have_asset_font = select_font_size(character_width, character_height, font_size);
-    for (const auto *character = reinterpret_cast<const unsigned char *>(text); *character != '\0'; ++character)
+    int character_count = 0;
+    for (const auto *character = reinterpret_cast<const unsigned char *>(text); *character != '\0';)
     {
-        const std::uint16_t codepoint = decode_character(*character, encoding);
-        if (have_asset_font &&
-            (draw_asset_glyph(cursor_x, y, character_width, character_height, codepoint, color, bold, font_size) ||
-             draw_asset_glyph(cursor_x, y, character_width, character_height, '?', color, bold, font_size)))
+        const std::uint16_t codepoint = (encoding == TextEncoding::UTF8) ?
+                                            next_utf8_codepoint(character) :
+                                            decode_character(*character++, encoding);
+        ++character_count;
+        if (draw_glyph(cursor_x, y, character_width, character_height, codepoint, color, bold) ||
+            draw_glyph(cursor_x, y, character_width, character_height, '?', color, bold))
         {
             cursor_x += character_width;
             continue;
@@ -888,7 +738,7 @@ void draw_text_sized(int x,
         cursor_x += character_width;
     }
 
-    const int text_width = static_cast<int>(std::strlen(text)) * character_width;
+    const int text_width = character_count * character_width;
     if (underlined)
     {
         fill_rect(x, y + character_height - 1, text_width, 1, color);
@@ -897,5 +747,20 @@ void draw_text_sized(int x,
     {
         fill_rect(x, y + character_height / 2, text_width, 1, color);
     }
+}
+
+int text_length(const char *text)
+{
+    if (text == nullptr)
+    {
+        return 0;
+    }
+    int count = 0;
+    for (const auto *character = reinterpret_cast<const unsigned char *>(text); *character != '\0';)
+    {
+        next_utf8_codepoint(character);
+        ++count;
+    }
+    return count;
 }
 }

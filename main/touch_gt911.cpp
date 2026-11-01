@@ -1,4 +1,4 @@
-#include "touch_gt911.hpp"
+#include "touch.hpp"
 
 #include "board_pins.hpp"
 #include "board_support.hpp"
@@ -22,6 +22,14 @@ constexpr std::uint8_t BACKUP_ADDRESS = 0x14;
 constexpr std::uint16_t PRODUCT_ID_REGISTER = 0x8140;
 constexpr std::uint16_t TOUCH_STATUS_REGISTER = 0x814E;
 constexpr std::size_t MAX_TOUCH_POINTS = 5;
+
+struct Point
+{
+    std::uint16_t x;
+    std::uint16_t y;
+    std::uint16_t strength;
+    std::uint8_t id;
+};
 
 i2c_master_dev_handle_t device = nullptr;
 TaskHandle_t task_handle = nullptr;
@@ -110,7 +118,7 @@ esp_err_t initialize_controller()
     return ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t read_points(std::array<touch_gt911::Point, MAX_TOUCH_POINTS> &points, std::size_t &count)
+esp_err_t read_points(std::array<Point, MAX_TOUCH_POINTS> &points, std::size_t &count)
 {
     count = 0;
     std::uint8_t status = 0;
@@ -146,7 +154,7 @@ esp_err_t read_points(std::array<touch_gt911::Point, MAX_TOUCH_POINTS> &points, 
 
 void touch_task(void *)
 {
-    std::array<touch_gt911::Point, MAX_TOUCH_POINTS> points = {};
+    std::array<Point, MAX_TOUCH_POINTS> points = {};
     std::size_t count = 0;
     bool was_touching = false;
     esp_err_t last_error = ESP_OK;
@@ -167,7 +175,7 @@ void touch_task(void *)
             last_error = ESP_OK;
             if (count > 0)
             {
-                const touch_gt911::Point &point = points[0];
+                const Point &point = points[0];
                 if (!was_touching)
                 {
                     if (!isovt::on_touch_pressed(point.x, point.y))
@@ -191,7 +199,7 @@ void touch_task(void *)
 }
 }
 
-namespace touch_gt911
+namespace touch
 {
 esp_err_t start()
 {

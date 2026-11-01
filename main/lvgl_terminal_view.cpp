@@ -3,6 +3,7 @@
 #include "board_pins.hpp"
 #include "lcd_panel.hpp"
 #include "logo_image.hpp"
+#include "ui_text.hpp"
 
 #include <cstdio>
 
@@ -35,10 +36,10 @@ bool stack_ready = false;
 bool working_set_visible = false;
 bool object_pool_download_active = false;
 std::uint8_t object_pool_download_percent = 0;
-std::string status = "STARTING";
+ui_text::Text status = ui_text::text(ui_text::Id::StatusStarting);
 std::string can_diagnostics = "CAN DIAGNOSTICS STARTING";
 std::string can_signal_diagnostics = "CAN SIGNAL DIAGNOSTICS STARTING";
-std::string gnss_status = "GNSS OPTIONAL MODULE OFF";
+ui_text::Text gnss_status = ui_text::text(ui_text::Id::GnssModuleOff);
 std::string section_control_status = "SECTION GEO: GNSS INPUT OFF";
 
 void render_locked()
@@ -56,9 +57,10 @@ void render_locked()
     }
 
     lcd_panel::fill(COLOR_BACKGROUND);
-    lcd_panel::fill_rect(0, 0, board::LCD_WIDTH, 58, COLOR_HEADER);
-    lcd_panel::draw_text(32, 18, 3, "ISOBUS ACCESS TERMINAL", COLOR_TEXT);
-    lcd_panel::draw_text(764, 18, 2, can_ready ? "CAN READY" : "CAN STARTING", can_ready ? COLOR_OK : COLOR_TEXT);
+    lcd_panel::fill_rect(0, 0, board::LCD_WIDTH, board::UI_Y + 58 * board::UI_SCALE_NUMERATOR / board::UI_SCALE_DENOMINATOR, COLOR_HEADER);
+    lcd_panel::use_ui_area();
+    lcd_panel::draw_text(32, 18, 3, ui_text::get(ui_text::Id::StatusHeader), COLOR_TEXT);
+    lcd_panel::draw_text(764, 18, 2, can_ready ? ui_text::get(ui_text::Id::CanReady) : ui_text::get(ui_text::Id::CanStarting), can_ready ? COLOR_OK : COLOR_TEXT);
 
     constexpr int logo_area_top = 72;
     constexpr int logo_area_bottom = 382;
@@ -74,7 +76,7 @@ void render_locked()
     lcd_panel::draw_text(MENU_BUTTON_X + 26, MENU_BUTTON_Y + 121, 2, "N", COLOR_TEXT);
     lcd_panel::draw_text(MENU_BUTTON_X + 26, MENU_BUTTON_Y + 149, 2, "U", COLOR_TEXT);
 
-    lcd_panel::fill_rect(42, 394, board::LCD_WIDTH - 84, 3, COLOR_ACCENT);
+    lcd_panel::fill_rect(42, 394, board::UI_WIDTH - 84, 3, COLOR_ACCENT);
     if (object_pool_download_active)
     {
         constexpr int progress_x = 42;
@@ -85,7 +87,7 @@ void render_locked()
         char percent_text[8];
         std::snprintf(percent_text, sizeof(percent_text), "%u%%", static_cast<unsigned>(object_pool_download_percent));
 
-        lcd_panel::draw_text(42, 416, 2, "LOADING MACHINE DATA", COLOR_MUTED);
+        lcd_panel::draw_text(42, 416, 2, ui_text::get(ui_text::Id::LoadingMachineData), COLOR_MUTED);
         lcd_panel::fill_rect(progress_x, progress_y, progress_width, progress_height, COLOR_MUTED);
         lcd_panel::fill_rect(progress_x + 3, progress_y + 3, progress_width - 6, progress_height - 6, COLOR_BACKGROUND);
         if (filled_width > 0)
@@ -93,17 +95,17 @@ void render_locked()
             lcd_panel::fill_rect(progress_x + 3, progress_y + 3, filled_width, progress_height - 6, COLOR_ACCENT);
         }
         lcd_panel::draw_text(890, 453, 2, percent_text, COLOR_DARK_TEXT);
-        lcd_panel::draw_text(42, 494, 2, status.c_str(), COLOR_MUTED);
+        lcd_panel::draw_text(42, 494, 2, status().c_str(), COLOR_MUTED);
     }
     else
     {
-        lcd_panel::draw_text(42, 416, 2, "STATUS", COLOR_MUTED);
-        lcd_panel::draw_text(42, 446, 2, status.c_str(), COLOR_DARK_TEXT);
-        lcd_panel::draw_text(42, 494, 2, stack_ready ? "VT SERVER READY   AUX-N AVAILABLE" : "WAITING FOR MACHINE CONNECTION", COLOR_MUTED);
+        lcd_panel::draw_text(42, 416, 2, ui_text::get(ui_text::Id::Status), COLOR_MUTED);
+        lcd_panel::draw_text(42, 446, 2, status().c_str(), COLOR_DARK_TEXT);
+        lcd_panel::draw_text(42, 494, 2, stack_ready ? ui_text::get(ui_text::Id::VtServerReady) : ui_text::get(ui_text::Id::WaitingForMachine), COLOR_MUTED);
     }
     lcd_panel::draw_text(42, 522, 2, can_diagnostics.c_str(), COLOR_MUTED);
     lcd_panel::draw_text(42, 548, 2, can_signal_diagnostics.c_str(), COLOR_MUTED);
-    lcd_panel::draw_text(42, 576, 1, gnss_status.c_str(), COLOR_MUTED);
+    lcd_panel::draw_text(42, 576, 2, gnss_status().c_str(), COLOR_MUTED);
 
     const esp_err_t present_result = lcd_panel::present();
     if (present_result != ESP_OK)
@@ -138,7 +140,7 @@ void render()
     request_render();
 }
 
-void update_status_and_render(const std::string &next_status)
+void update_status_and_render(const ui_text::Text &next_status)
 {
     if (view_mutex == nullptr)
     {
@@ -209,10 +211,15 @@ void init()
     render();
 }
 
-void set_status(const std::string &text)
+void set_status(const ui_text::Text &text)
 {
-    ESP_LOGI(TAG, "%s", text.c_str());
+    ESP_LOGI(TAG, "%s", text().c_str());
     update_status_and_render(text);
+}
+
+void set_status(ui_text::Id text)
+{
+    set_status(ui_text::text(text));
 }
 
 void set_bus_state(bool can_up, bool agisostack_up)
@@ -261,7 +268,7 @@ void set_can_signal_diagnostics(const std::string &text)
     }
 }
 
-void set_gnss_status(const std::string &text)
+void set_gnss_status(const ui_text::Text &text)
 {
     if (view_mutex == nullptr)
     {
@@ -270,7 +277,7 @@ void set_gnss_status(const std::string &text)
 
     if (xSemaphoreTake(view_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
     {
-        if (gnss_status == text)
+        if (gnss_status() == text())
         {
             xSemaphoreGive(view_mutex);
             return;
@@ -325,16 +332,14 @@ void on_machine_ecu_state(std::uint64_t name, std::uint8_t address, bool online)
              static_cast<unsigned>(address),
              online ? "online" : "offline");
 
-    char text[48];
     if (online)
     {
-        std::snprintf(text, sizeof(text), "MACHINE ECU ONLINE SA %u", static_cast<unsigned>(address));
+        update_status_and_render(ui_text::text(ui_text::Id::StatusEcuOnline, address));
     }
     else
     {
-        std::snprintf(text, sizeof(text), "MACHINE ECU OFFLINE");
+        update_status_and_render(ui_text::text(ui_text::Id::StatusEcuOffline));
     }
-    update_status_and_render(text);
 }
 
 void on_object_pool_loaded(std::uint64_t client_name, std::size_t bytes)
@@ -342,13 +347,13 @@ void on_object_pool_loaded(std::uint64_t client_name, std::size_t bytes)
     ESP_LOGI(TAG, "Object pool loaded: client=0x%016llx bytes=%u",
              static_cast<unsigned long long>(client_name),
              static_cast<unsigned>(bytes));
-    update_status_and_render("WORKING SET RECEIVED");
+    update_status_and_render(ui_text::text(ui_text::Id::StatusWorkingSetReceived));
 }
 
 void on_repaint_requested(std::uint64_t client_name)
 {
     ESP_LOGD(TAG, "Repaint requested for client=0x%016llx", static_cast<unsigned long long>(client_name));
-    update_status_and_render("WORKING SET REPAINT");
+    update_status_and_render(ui_text::text(ui_text::Id::StatusWorkingSetRepaint));
 }
 
 void on_active_mask_changed(std::uint64_t client_name, std::uint16_t previous_mask, std::uint16_t active_mask)
@@ -357,9 +362,7 @@ void on_active_mask_changed(std::uint64_t client_name, std::uint16_t previous_ma
              static_cast<unsigned long long>(client_name),
              previous_mask,
              active_mask);
-    char text[48];
-    std::snprintf(text, sizeof(text), "ACTIVE MASK %u", active_mask);
-    update_status_and_render(text);
+    update_status_and_render(ui_text::text(ui_text::Id::StatusActiveMask, active_mask));
 }
 
 void on_soft_key_mask_changed(std::uint64_t client_name, std::uint16_t previous_mask, std::uint16_t active_mask)
@@ -368,9 +371,7 @@ void on_soft_key_mask_changed(std::uint64_t client_name, std::uint16_t previous_
              static_cast<unsigned long long>(client_name),
              previous_mask,
              active_mask);
-    char text[48];
-    std::snprintf(text, sizeof(text), "SOFT KEY MASK %u", active_mask);
-    update_status_and_render(text);
+    update_status_and_render(ui_text::text(ui_text::Id::StatusSoftKeyMask, active_mask));
 }
 
 void on_focus_changed(std::uint64_t client_name, std::uint16_t object_id, bool input_open)
@@ -379,9 +380,7 @@ void on_focus_changed(std::uint64_t client_name, std::uint16_t object_id, bool i
              static_cast<unsigned long long>(client_name),
              object_id,
              input_open ? "open" : "closed");
-    char text[48];
-    std::snprintf(text, sizeof(text), "FOCUS OBJECT %u", object_id);
-    update_status_and_render(text);
+    update_status_and_render(ui_text::text(ui_text::Id::StatusFocusObject, object_id));
 }
 
 void on_aux_n_input_device(std::uint64_t device_name, std::uint16_t model_identification_code)
@@ -389,7 +388,7 @@ void on_aux_n_input_device(std::uint64_t device_name, std::uint16_t model_identi
     ESP_LOGI(TAG, "AUX-N input device NAME=0x%016llx model=%u",
              static_cast<unsigned long long>(device_name),
              model_identification_code);
-    update_status_and_render("AUX-N INPUT FOUND");
+    update_status_and_render(ui_text::text(ui_text::Id::StatusAuxInputFound));
 }
 
 void on_aux_n_assignment_result(std::uint64_t implement_name, std::uint16_t function_object_id, std::uint8_t error_code)
@@ -398,9 +397,7 @@ void on_aux_n_assignment_result(std::uint64_t implement_name, std::uint16_t func
              static_cast<unsigned long long>(implement_name),
              function_object_id,
              error_code);
-    char text[48];
-    std::snprintf(text, sizeof(text), "AUX-N RESULT %u", error_code);
-    update_status_and_render(text);
+    update_status_and_render(ui_text::text(ui_text::Id::StatusAuxResult, error_code));
 }
 
 void on_touch(std::uint16_t x, std::uint16_t y, std::size_t count)
@@ -408,8 +405,10 @@ void on_touch(std::uint16_t x, std::uint16_t y, std::size_t count)
     ESP_LOGI(TAG, "Touch: x=%u y=%u points=%u", x, y, static_cast<unsigned>(count));
 }
 
-bool is_idle_menu_touch(std::uint16_t x, std::uint16_t y)
+bool is_idle_menu_touch(std::uint16_t lcd_x, std::uint16_t lcd_y)
 {
+    const int x = (static_cast<int>(lcd_x) - board::UI_X) * board::UI_SCALE_DENOMINATOR / board::UI_SCALE_NUMERATOR;
+    const int y = (static_cast<int>(lcd_y) - board::UI_Y) * board::UI_SCALE_DENOMINATOR / board::UI_SCALE_NUMERATOR;
     if (view_mutex == nullptr)
     {
         return false;

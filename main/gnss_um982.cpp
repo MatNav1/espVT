@@ -186,24 +186,22 @@ void update_view(bool force = false)
         return;
     }
 
-    char message[64] = {};
-    if (!snapshot.receiver_configured)
-    {
-        std::snprintf(message, sizeof(message), "GNSS UART PINS REQUIRED");
-    }
-    else if (!snapshot.position_valid)
-    {
-        std::snprintf(message, sizeof(message), "GNSS NO FIX%s", snapshot.ntrip_enabled ? " NTRIP WAIT" : "");
-    }
-    else if (snapshot.ntrip_connected)
-    {
-        std::snprintf(message, sizeof(message), "GNSS %s %u SAT NTRIP ON", gnss_um982::fix_quality_text(snapshot.fix_quality), snapshot.satellites);
-    }
-    else
-    {
-        std::snprintf(message, sizeof(message), "GNSS %s %u SAT%s", gnss_um982::fix_quality_text(snapshot.fix_quality), snapshot.satellites, snapshot.ntrip_enabled ? " NTRIP WAIT" : "");
-    }
-    vt_view::set_gnss_status(message);
+    vt_view::set_gnss_status([snapshot]() {
+        if (!snapshot.receiver_configured)
+        {
+            return std::string(ui_text::get(ui_text::Id::GnssPinsRequired));
+        }
+        std::string message = snapshot.position_valid ?
+                                  ui_text::format(ui_text::Id::GnssFix,
+                                                  gnss_um982::fix_quality_text(snapshot.fix_quality),
+                                                  static_cast<unsigned>(snapshot.satellites)) :
+                                  std::string(ui_text::get(ui_text::Id::GnssNoFix));
+        if (snapshot.ntrip_enabled)
+        {
+            message += ui_text::get(snapshot.ntrip_connected ? ui_text::Id::GnssNtripOn : ui_text::Id::GnssNtripWaiting);
+        }
+        return message;
+    });
 }
 
 void parse_nmea_sentence(char *sentence)
@@ -764,19 +762,19 @@ bool is_enabled()
 esp_err_t start()
 {
 #if !CONFIG_ISOVT_GNSS_SOURCE_UM982 && !CONFIG_ISOVT_GNSS_SOURCE_RS232
-    vt_view::set_gnss_status("GNSS OPTIONAL MODULE OFF");
+    vt_view::set_gnss_status(ui_text::text(ui_text::Id::GnssModuleOff));
     return ESP_ERR_NOT_SUPPORTED;
 #else
     if (GNSS_UART_RX_GPIO < 0)
     {
-        vt_view::set_gnss_status("GNSS UART PINS REQUIRED");
+        vt_view::set_gnss_status(ui_text::text(ui_text::Id::GnssPinsRequired));
         return ESP_ERR_INVALID_ARG;
     }
 
 #if CONFIG_ISOVT_GNSS_SOURCE_UM982 && CONFIG_ISOVT_ENABLE_NTRIP
     if (GNSS_UART_TX_GPIO < 0)
     {
-        vt_view::set_gnss_status("GNSS NTRIP TX REQUIRED");
+        vt_view::set_gnss_status(ui_text::text(ui_text::Id::GnssNtripTxRequired));
         return ESP_ERR_INVALID_ARG;
     }
 #endif

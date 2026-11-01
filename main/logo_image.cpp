@@ -8,12 +8,14 @@ namespace logo_image
 {
 int height()
 {
-    return logo_asset::HEIGHT;
+    return logo_asset::HEIGHT * board::UI_SCALE_DENOMINATOR / board::UI_SCALE_NUMERATOR;
 }
 
 void draw_centered(int top_y)
 {
-    const int left = (board::LCD_WIDTH - logo_asset::WIDTH) / 2;
-    lcd_panel::draw_rgb565(left, top_y, logo_asset::WIDTH, logo_asset::HEIGHT, logo_asset::PIXELS);
+    // The asset is generated at the UI scale, so it is copied 1:1 to the LCD.
+    const int width = logo_asset::WIDTH * board::UI_SCALE_DENOMINATOR / board::UI_SCALE_NUMERATOR;
+    const int left = (board::UI_WIDTH - width) / 2;
+    lcd_panel::draw_rgb565(left, top_y, width, height(), logo_asset::PIXELS, logo_asset::WIDTH, logo_asset::HEIGHT);
 }
 }

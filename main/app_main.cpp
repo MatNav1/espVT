@@ -5,7 +5,7 @@
 #include "lvgl_terminal_view.hpp"
 #include "object_pool_store.hpp"
 #include "section_control.hpp"
-#include "touch_gt911.hpp"
+#include "touch.hpp"
 #include "vt_audio.hpp"
 #include "vt_scene_renderer.hpp"
 
@@ -38,7 +38,7 @@ void start_terminal_when_bus_is_active(void *)
     vt_view::set_bus_state(true, stack_ready);
     if (!stack_ready)
     {
-        vt_view::set_status("ISOBUS VT start failed");
+        vt_view::set_status(ui_text::Id::StatusVtStartFailed);
     }
     vTaskDelete(nullptr);
 }
@@ -46,7 +46,7 @@ void start_terminal_when_bus_is_active(void *)
 
 extern "C" void app_main()
 {
-    ESP_LOGI(TAG, "Starting ESP32-S3 ISOBUS VT");
+    ESP_LOGI(TAG, "Starting ESP ISOBUS VT on %s", CONFIG_IDF_TARGET);
 
     // AgIsoStack++ creates nested C++ threads for CAN and object-pool parsing.
     auto pthread_config = esp_pthread_get_default_config();
@@ -78,10 +78,10 @@ extern "C" void app_main()
 
     vt_view::init();
     can_monitor::enable_ui_updates();
-    vt_view::set_status("Initializing ISOBUS terminal");
+    vt_view::set_status(ui_text::Id::StatusInitializing);
 
-    const bool touch_ready = (touch_gt911::start() == ESP_OK);
-    ESP_LOGI(TAG, "GT911 touch: %s", touch_ready ? "ready" : "not ready");
+    const bool touch_ready = (touch::start() == ESP_OK);
+    ESP_LOGI(TAG, "Touch: %s", touch_ready ? "ready" : "not ready");
 
     const bool local_ui_ready = isovt::start_local_ui();
     ESP_LOGI(TAG, "Local VT menu: %s", local_ui_ready ? "ready" : "not ready");
@@ -111,13 +111,13 @@ extern "C" void app_main()
                                     1) != pdPASS)
         {
             ESP_LOGE(TAG, "Could not create VT bus wait task");
-            vt_view::set_status("ISOBUS startup task failed");
+            vt_view::set_status(ui_text::Id::StatusStartupTaskFailed);
         }
     }
     vt_view::set_bus_state(can_ready, false);
 
     if (!can_ready)
     {
-        vt_view::set_status("CAN start failed");
+        vt_view::set_status(ui_text::Id::StatusCanStartFailed);
     }
 }

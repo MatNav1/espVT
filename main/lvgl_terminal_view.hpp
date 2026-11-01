@@ -3,14 +3,17 @@
 #include <cstdint>
 #include <string>
 
+#include "ui_text.hpp"
+
 namespace vt_view
 {
 void init();
-void set_status(const std::string &text);
+void set_status(ui_text::Id text);
+void set_status(const ui_text::Text &text);
 void set_bus_state(bool can_up, bool agisostack_up);
 void set_can_diagnostics(const std::string &text);
 void set_can_signal_diagnostics(const std::string &text);
-void set_gnss_status(const std::string &text);
+void set_gnss_status(const ui_text::Text &text);
 void set_section_control_status(const std::string &text);
 void set_object_pool_download_progress(bool active, std::uint8_t percent);
 void on_machine_ecu_state(std::uint64_t name, std::uint8_t address, bool online);

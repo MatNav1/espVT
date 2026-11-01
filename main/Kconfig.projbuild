@@ -1,5 +1,60 @@
 menu "ESP ISOBUS VT"
 
+choice ISOVT_BOARD
+    prompt "Terminal board"
+    default ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_7B if IDF_TARGET_ESP32S3
+    default ISOVT_BOARD_GUITION_JC8012P4A1C if IDF_TARGET_ESP32P4
+    help
+        Selects the display, touch and board support code.
+
+config ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_7B
+    bool "Waveshare ESP32-S3-Touch-LCD-7B (1024x600 RGB, GT911)"
+    depends on IDF_TARGET_ESP32S3
+
+config ISOVT_BOARD_GUITION_JC8012P4A1C
+    bool "Guition JC8012P4A1C_I_W_Y (ESP32-P4, 1280x800 MIPI-DSI, GSL3680)"
+    depends on IDF_TARGET_ESP32P4
+    help
+        10.1" JD9365 panel ("new panel", SKU 10153001-V3), driven in landscape
+        through PPA rotation. The board has no CAN transceiver; connect an
+        external one with 5 V VCC and 3.3 V VIO (e.g. TCAN1044AV-Q1,
+        TJA1051T/3, TJA1462) to the configured CAN GPIOs.
+
+endchoice
+
+config ISOVT_CAN_TX_GPIO
+    int "CAN transceiver TX GPIO"
+    default 20 if ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_7B
+    default 4 if ISOVT_BOARD_GUITION_JC8012P4A1C
+    help
+        On the Waveshare board GPIO20 is shared with USB and switched to CAN
+        through the IO expander. On the JC8012 board the default uses the FPC3
+        expansion connector.
+
+config ISOVT_CAN_RX_GPIO
+    int "CAN transceiver RX GPIO"
+    default 19 if ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_7B
+    default 5 if ISOVT_BOARD_GUITION_JC8012P4A1C
+
+if ISOVT_BOARD_GUITION_JC8012P4A1C
+
+choice ISOVT_DISPLAY_ROTATION
+    prompt "Landscape orientation"
+    default ISOVT_DISPLAY_ROTATION_270
+    help
+        The 800x1280 panel is mounted in landscape. Rotation is done by the
+        PPA when a frame is presented; touch coordinates are rotated to match.
+
+config ISOVT_DISPLAY_ROTATION_90
+    bool "90 degrees (front camera at the bottom edge)"
+
+config ISOVT_DISPLAY_ROTATION_270
+    bool "270 degrees (front camera at the top edge)"
+
+endchoice
+
+endif
+
 config ISOVT_ENABLE_AGISOSTACK
     bool "Enable AgIsoStack++ VT server adapter"
     default y
@@ -25,7 +80,7 @@ menu "Audio output"
 
 config ISOVT_ENABLE_AUDIO
     bool "Enable ISO-VT alarm and audio signal output"
-    default y
+    default y if ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_7B
     help
         Plays Alarm Mask signals and Control Audio Signal commands through a
         MAX98357A I2S mono amplifier and an external speaker.

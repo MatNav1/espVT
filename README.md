@@ -1,10 +1,13 @@
 # espVT — ESP32-S3 ISOBUS Virtual Terminal
 
+**Polski** | [English](README.en.md)
+
 > **Status:** experimental, unofficial and not ISO 11783 certified. Do not use
 > it as the sole control or safety device for agricultural machinery.
 
 Projekt terminala dostepowego ISOBUS/UT na plytce Waveshare
-ESP32-S3-Touch-LCD-7B z AgIsoStack++.
+ESP32-S3-Touch-LCD-7B z AgIsoStack++. Eksperymentalnie obslugiwana jest tez
+plytka Guition JC8012P4A1C_I_W_Y z ESP32-P4 i ekranem 10,1 cala.
 
 Repozytorium zawiera również firmware osobnego panelu przycisków AUX-N dla
 ESP32U w katalogu `auxn_buttons_esp32`.
@@ -36,6 +39,24 @@ Plytka ESP32-S3-Touch-LCD-7B ma:
 Uwaga: port USB i CAN wspoldziela linie GPIO19/20. Do programowania uzywaj portu
 UART/USB plytki albo przelacz EXIO5 w tryb USB zgodnie z dokumentacja Waveshare.
 
+### Guition JC8012P4A1C_I_W_Y (ESP32-P4, eksperymentalnie)
+
+- LCD MIPI-DSI 10,1 cala, panel 800x1280 (JD9365, "new panel", SKU 10153001-V3),
+  uzywany poziomo jako 1280x800; obrot wykonuje sprzetowo PPA,
+- dotyk GSL3680 po I2C (SDA GPIO7, SCL GPIO8, RST GPIO22, INT GPIO21),
+- podswietlenie GPIO23, reset LCD GPIO27,
+- plytka nie ma transceivera CAN. Potrzebny jest zewnetrzny transceiver z zasilaniem
+  VCC 5 V i pinem VIO 3,3 V, np. TCAN1044AV-Q1 (TI) albo TJA1051T/3 lub TJA1462
+  (NXP); piny magistrali powinny wytrzymac zwarcie do zasilania 12/24 V.
+  VCC 5 V pochodzi z wlasnej przetwornicy 12/24 V -> 5 V (FPC3/FPC4 daja tylko
+  3,3 V), VIO 3,3 V z VDDA na FPC3 (piny 13/14), TXD/RXD na GPIO4/GPIO5
+  (FPC3 piny 8/7). FPC3 to 14-pinowe zlacze ZIF 0,5 mm (styki dolne), pasuje
+  Wurth 68711414522.
+
+Menu terminala i ekran oczekiwania (uklad 1024x600) sa skalowane 5/4 do 1280x750;
+obszar VT wykorzystuje pelna wysokosc 800 pikseli. Kamera jest u gory ekranu. Dzwiek (ES8311)
+i GNSS nie sa jeszcze przeniesione na te plytke.
+
 ## Obudowa do druku 3D
 
 Aktualny model obudowy znajduje się w pliku
@@ -47,7 +68,7 @@ zasilaniem SY8205 i złączem RS-232; przewidziany materiał to PETG.
 
 - `main/board_pins.hpp` - stale sprzetowe dla ESP32-S3-Touch-LCD-7B.
 - `main/app_main.cpp` - punkt startowy aplikacji.
-- `main/board_support.*` - inicjalizacja I2C, ekspandera IO i trybu CAN.
+- `main/board_support*` - inicjalizacja I2C, ekspandera IO i trybu CAN.
 - `main/can_monitor.*` - uruchomienie TWAI przez AgIsoStack++.
 - `main/lcd_panel.*` - sterownik RGB565 panelu 1024x600 z dwoma buforami w PSRAM.
 - `main/touch_gt911.*` - inicjalizacja i diagnostyka dotyku GT911.
@@ -71,50 +92,64 @@ Adapter jest domyslnie wlaczony. Przed podlaczeniem do prawdziwej magistrali
 ustaw przydzielony kod producenta oraz unikalny numer terminala:
 
 ```sh
-idf.py menuconfig
+./make_espVT.sh menuconfig Waveshare7B_RS232
 ```
 
-i ustaw `ISOVT_MANUFACTURER_CODE` i `ISOVT_IDENTITY_NUMBER`.
+i ustaw `ISOVT_MANUFACTURER_CODE` i `ISOVT_IDENTITY_NUMBER`. Kazdy target ma
+wlasna konfiguracje w `build_<target>/sdkconfig`, wiec ustawienia trzeba wprowadzic
+dla kazdego uzywanego targetu.
 
 ## Budowanie
 
-Wymagane jest ESP-IDF z obsluga ESP32-S3.
+Wymagane jest ESP-IDF 6.1 z obsluga ESP32-S3 i ESP32-P4. Skrypt `make_espVT.sh` sam laduje
+srodowisko z `~/.espressif/tools/activate_idf_v6.1.sh`, jezeli `idf.py` nie jest
+dostepne; inna instalacje mozna wskazac zmienna `IDF_ACTIVATE`.
 
 Projekt ma domyslnie `CONFIG_APP_NO_BLOBS=y`, aby nie linkowac binarnych
 bibliotek Wi-Fi/Bluetooth. Terminal korzysta z CAN/TWAI, I2C i SPIFFS, wiec ta
 konfiguracja ogranicza niepotrzebne zaleznosci platformy.
 
 ```sh
-idf.py set-target esp32s3
-idf.py build
-idf.py flash monitor
+./make_espVT.sh                                 # wszystkie targety
+./make_espVT.sh Waveshare7B_RS232               # jeden target
+./make_espVT.sh JC8012P4 force                  # przebudowanie od zera
+./make_espVT.sh flash Waveshare7B_RS232 /dev/ttyACM0  # wgranie i monitor
+./make_espVT.sh clean                           # usuniecie katalogow build
 ```
+
+| Target | Chip | Dodatkowa konfiguracja |
+|---|---|---|
+| `Waveshare7B` | ESP32-S3 | `sdkconfig.defaults.Waveshare7B.esp32s3` |
+| `Waveshare7B_RS232` | ESP32-S3 | + `sdkconfig.defaults.rs232` |
+| `Waveshare7B_NTRIP` | ESP32-S3 | + `sdkconfig.defaults.ntrip` |
+| `JC8012P4` | ESP32-P4 | `sdkconfig.defaults.JC8012P4.esp32p4` |
+
+Konfiguracja jest warstwowa: `sdkconfig.defaults` (wspolne), `sdkconfig.defaults.<chip>`
+(ustawienia ukladu), `sdkconfig.defaults.<plytka>.<chip>` (plytka) oraz opcjonalne
+`sdkconfig.defaults.<funkcja>`. Kazdy target buduje sie w `build_<target>/` z wlasnym
+`sdkconfig`. Stare nazwy `default`, `rs232` i `ntrip` dzialaja jako aliasy, a `p4`
+oznacza `JC8012P4`.
 
 ## Jeden plik firmware do release
 
-Po zbudowaniu wariantu RS-232 można utworzyć kompletny obraz zawierający
-bootloader, tablicę partycji i aplikację:
+Kazdy build tworzy kompletny obraz zawierajacy bootloader, tablice partycji
+i aplikacje, w katalogu `delivery/`, np. `delivery/espVT-v0.1.0-Waveshare7B_RS232.bin`
+(wersja pochodzi z `git describe`). Obraz wgrywa sie od adresu `0x0`:
 
 ```sh
-cmake --build build-rs232 --target merge-bin
+esptool.py --chip esp32s3 --port PORT write_flash 0x0 espVT-v0.1.0-Waveshare7B_RS232.bin
 ```
 
-Powstanie plik `build-rs232/merged-binary.bin`, gotowy do wgrania od adresu
-`0x0`:
-
-```sh
-esptool.py --chip esp32s3 --port PORT write_flash 0x0 merged-binary.bin
-```
-
-Do GitHub Release należy dołączyć ten jeden plik, nazwany na przykład
-`espVT-v0.1.0-RS232.bin`. Obraz jest przeznaczony dla pamięci flash 16 MB,
-trybu DIO i częstotliwości 80 MHz.
+Do GitHub Release należy dołączyć ten jeden plik targetu `Waveshare7B_RS232`. Obraz jest
+przeznaczony dla pamięci flash 16 MB; firmware pracuje z nią w trybie QIO
+przy 120 MHz (nagłówek obrazu ma, jak zwykle w ESP-IDF, DIO/80 MHz, a bootloader
+przełącza tryb).
 
 Build panelu AUX-N automatycznie tworzy drugi kompletny obraz
 `releases/espVT-AUX-N-ESP32U.bin`. Jest on przeznaczony dla klasycznego ESP32U
 z pamięcią 4 MB i również wgrywa się go od adresu `0x0`.
 
-Build zostal zweryfikowany na ESP-IDF 5.5 dla ESP32-S3. Firmware inicjalizuje
+Build jest sprawdzany na ESP-IDF 6.1 dla ESP32-S3. Firmware inicjalizuje
 panel RGB 1024x600 zgodnie z parametrami Waveshare, pokazuje logo startowe
 i ekran oczekiwania na working set maszyny,
 i sprawdza kontroler dotyku GT911 po I2C. Po zaladowaniu IOP renderer obsluguje
@@ -150,16 +185,15 @@ ekranie oczekiwania i przekazuje RTCM z NTRIP do odbiornika. Wariant `Serial` od
 te same dane NMEA przez MAX3232 i port RS-232. Oba warianty udostepniaja bramke jakosci
 pozycji dla przyszlej automatyki sekcji, jezeli odbiornik raportuje swiezy RTK.
 
-Biezacy `sdkconfig` ma wlaczony RS-232 (UART1, RX GPIO11, 57600 bit/s), tak samo
-jak `sdkconfig.rs232`. Zachowaj te ustawienia przy zwyklym `idf.py build flash`:
-wybor `ISOVT_GNSS_SOURCE_NONE` wylacza odbior GPS i predkosc wysylana po ISOBUS.
-Osobny wariant RS-232 mozna zbudowac ponizszym poleceniem; przy wgrywaniu nalezy
-uzyc tego samego katalogu i konfiguracji (zastap `build` przez `-p PORT flash`):
+Target `Waveshare7B` nie ma zewnetrznego GNSS (`ISOVT_GNSS_SOURCE_NONE`), co wylacza
+odbior GPS i predkosc wysylana po ISOBUS. Target `Waveshare7B_RS232` wlacza RS-232
+(UART1, RX GPIO11, 57600 bit/s). Target `Waveshare7B_NTRIP` wlacza UM982 z NTRIP;
+dane Wi-Fi i NTRIP ustaw przez `./make_espVT.sh menuconfig Waveshare7B_NTRIP`
+i nie publikuj pliku `build_Waveshare7B_NTRIP/sdkconfig`.
 
 ```sh
-idf.py -B build-rs232 \
-  -D SDKCONFIG="$PWD/sdkconfig.rs232" \
-  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.rs232.defaults" build
+./make_espVT.sh Waveshare7B_RS232
+./make_espVT.sh flash Waveshare7B_RS232 PORT
 ```
 
 Domyslne polaczenie: `GPIO11 <- RXD` po stronie TTL uzytego konwertera MAX3232 oraz
@@ -202,3 +236,12 @@ maszyny i dopuszczalnego nakladania. Szczegoly podlaczenia i konfiguracji sa w
 ## Uruchomienie na plytce
 
 Kolejnosc pierwszego testu i oczekiwane komunikaty sa opisane w `BRINGUP.md`.
+
+## Licencja
+
+espVT jest udostepniany na licencji GNU GPL w wersji 3 lub (do wyboru) dowolnej
+pozniejszej, patrz `LICENSE`. Wczesniejszy kod espVT byl publikowany na licencji
+MIT; jej tekst i nota autorska sa zachowane w `LICENSES/MIT-espVT.txt`.
+Zmiana wynika z wlaczenia sterownika dotyku GSL3680 (`components/esp_lcd_touch_gsl3680`),
+ktorego algorytm Silead jest objety licencja GPL-2.0-or-later. AgIsoStack++
+w `third_party/` zachowuje wlasna licencje MIT, a ESP-IDF licencje Apache-2.0.
