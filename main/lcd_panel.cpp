@@ -507,18 +507,16 @@ esp_err_t init()
     config.timings.vsync_front_porch = 3;
     config.timings.flags.pclk_active_neg = true;
     config.data_width = 16;
-    config.bits_per_pixel = 16;
+    config.in_color_format = LCD_COLOR_FMT_RGB565;
     config.num_fbs = 2;
     config.bounce_buffer_size_px = board::LCD_WIDTH * 10;
     config.dma_burst_size = 64;
-    config.sram_trans_align = 4;
-    config.psram_trans_align = 64;
     config.hsync_gpio_num = GPIO_NUM_46;
     config.vsync_gpio_num = GPIO_NUM_3;
     config.de_gpio_num = GPIO_NUM_5;
     config.pclk_gpio_num = GPIO_NUM_7;
-    config.disp_gpio_num = -1;
-    const int data_pins[] = {
+    config.disp_gpio_num = GPIO_NUM_NC;
+    const gpio_num_t data_pins[] = {
         GPIO_NUM_14, GPIO_NUM_38, GPIO_NUM_18, GPIO_NUM_17,
         GPIO_NUM_10, GPIO_NUM_39, GPIO_NUM_0, GPIO_NUM_45,
         GPIO_NUM_48, GPIO_NUM_47, GPIO_NUM_21, GPIO_NUM_1,
@@ -555,9 +553,8 @@ esp_err_t init()
     std::fill_n(frame_buffers[0], FRAME_PIXELS, 0x0000);
     std::fill_n(frame_buffers[1], FRAME_PIXELS, 0x0000);
 
-    const esp_lcd_rgb_panel_event_callbacks_t callbacks = {
-        .on_bounce_frame_finish = on_frame_complete,
-    };
+    esp_lcd_rgb_panel_event_callbacks_t callbacks = {};
+    callbacks.on_frame_buf_complete = on_frame_complete;
     ESP_RETURN_ON_ERROR(esp_lcd_rgb_panel_register_event_callbacks(panel, &callbacks, nullptr), TAG,
                         "RGB frame callback registration failed");
 
