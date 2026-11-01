@@ -30,6 +30,13 @@ void set_view_transform_xy(int offset_x,
 void reset_view_transform();
 void set_clip_rect(int x, int y, int width, int height);
 void reset_clip_rect();
+// All coordinates are relative to the current drawing area. begin_frame()
+// selects the whole LCD; use_ui_area() selects the centered UI_WIDTH x UI_HEIGHT
+// window the menu and status screens are laid out for.
+void use_full_screen();
+void use_ui_area();
+int area_x();
+int area_y();
 esp_err_t fill(std::uint16_t color);
 esp_err_t fill_rect(int x, int y, int width, int height, std::uint16_t color);
 esp_err_t draw_rgb565(int x, int y, int width, int height, const std::uint16_t *pixels);

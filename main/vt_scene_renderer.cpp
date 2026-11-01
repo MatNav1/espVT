@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,8 @@ constexpr int SOFT_KEY_ROWS = 6;
 constexpr int CONTROL_PADDING = 2;
 constexpr int LEFT_INFO_WIDTH = 200;
 constexpr int VT_ORIGIN_X = 0;
+// Screen strip left of the working set bar that holds the 64 px MENU button at x=16.
+constexpr int MENU_STRIP_WIDTH = 83;
 constexpr std::uint16_t CHROME_BACKGROUND = 0x2945;
 constexpr std::uint16_t CHROME_DARK = 0x1082;
 constexpr std::uint16_t CHROME_ACTIVE = 0x05E0;
@@ -100,16 +103,22 @@ VTLayout current_layout()
 {
     const int data_mask_size = terminal_settings.data_mask_size == 600 ? 600 : 480;
     const int soft_key_designator_size = data_mask_size / 8;
-    const int scale_numerator = data_mask_size == 480 ? 5 : 1;
-    const int scale_denominator = data_mask_size == 480 ? 4 : 1;
-    constexpr int working_set_bar_screen_width = 136;
-    const int working_set_bar_width = working_set_bar_screen_width * scale_denominator / scale_numerator;
-    const int working_set_slot_height = working_set_bar_width;
+    // The data mask always fills the full LCD height.
+    const int scale_gcd = std::gcd(board::LCD_HEIGHT, data_mask_size);
+    const int scale_numerator = board::LCD_HEIGHT / scale_gcd;
+    const int scale_denominator = data_mask_size / scale_gcd;
     const int working_set_gap = data_mask_size / 120;
-    const int data_mask_x = VT_ORIGIN_X + working_set_bar_width + working_set_gap;
-    const int soft_key_x = data_mask_x + data_mask_size;
     const int soft_key_height = data_mask_size / SOFT_KEY_ROWS;
     const int soft_key_width = soft_key_height;
+    const int fixed_width = working_set_gap + data_mask_size + SOFT_KEY_COLUMNS * soft_key_width;
+    // 136 px on the 600 px high LCD; narrowed where the LCD is too short for it
+    // to fit next to the MENU strip.
+    int working_set_bar_width = (136 * board::LCD_HEIGHT / 600) * scale_denominator / scale_numerator;
+    const int maximum_content_width = (board::LCD_WIDTH - MENU_STRIP_WIDTH) * scale_denominator / scale_numerator;
+    working_set_bar_width = std::min(working_set_bar_width, maximum_content_width - fixed_width);
+    const int working_set_slot_height = working_set_bar_width;
+    const int data_mask_x = VT_ORIGIN_X + working_set_bar_width + working_set_gap;
+    const int soft_key_x = data_mask_x + data_mask_size;
     const int content_width = soft_key_x + SOFT_KEY_COLUMNS * soft_key_width;
     const int scaled_width = content_width * scale_numerator / scale_denominator;
     const int screen_x = std::max(0, board::LCD_WIDTH - scaled_width);
@@ -1656,8 +1665,8 @@ void add_screen_target(std::vector<ScreenRect> &targets,
                        vt_scene_renderer::TerminalAction action)
 {
     targets.push_back({
-        .x = x,
-        .y = y,
+        .x = lcd_panel::area_x() + x,
+        .y = lcd_panel::area_y() + y,
         .width = width,
         .height = height,
         .target = {
@@ -1912,10 +1921,10 @@ void draw_page_title(const char *title, const char *subtitle)
     constexpr std::uint16_t PAGE = 0xFFFF;
     constexpr std::uint16_t DARK = 0x1082;
     constexpr std::uint16_t MUTED = 0x52AA;
-    lcd_panel::fill_rect(LEFT_INFO_WIDTH, 0, board::LCD_WIDTH - LEFT_INFO_WIDTH, board::LCD_HEIGHT, PAGE);
+    lcd_panel::fill_rect(LEFT_INFO_WIDTH, 0, board::UI_WIDTH - LEFT_INFO_WIDTH, board::UI_HEIGHT, PAGE);
     lcd_panel::draw_text(LEFT_INFO_WIDTH + 28, 24, 3, title, DARK);
     lcd_panel::draw_text(LEFT_INFO_WIDTH + 30, 58, 2, subtitle, MUTED);
-    lcd_panel::fill_rect(LEFT_INFO_WIDTH + 28, 88, board::LCD_WIDTH - LEFT_INFO_WIDTH - 56, 3, 0x3C86);
+    lcd_panel::fill_rect(LEFT_INFO_WIDTH + 28, 88, board::UI_WIDTH - LEFT_INFO_WIDTH - 56, 3, 0x3C86);
 }
 
 void render_machine_page(
@@ -1946,8 +1955,8 @@ void render_machine_page(
         lcd_panel::draw_text(LEFT_INFO_WIDTH + 46, y + 12, 2, title, 0x1082);
         lcd_panel::draw_text(LEFT_INFO_WIDTH + 46, y + 38, 2, detail, 0x52AA);
         targets.push_back({
-            .x = LEFT_INFO_WIDTH + 28,
-            .y = y,
+            .x = lcd_panel::area_x() + LEFT_INFO_WIDTH + 28,
+            .y = lcd_panel::area_y() + y,
             .width = 760,
             .height = 66,
             .target = {
@@ -2333,7 +2342,9 @@ void render_information_page()
     draw_value_row(LEFT_INFO_WIDTH + 28, 112, 760, "OPROGRAMOWANIE", app ? app->project_name : "ESP ISOBUS VT", true);
     draw_value_row(LEFT_INFO_WIDTH + 28, 160, 760, "WERSJA VT",
                    terminal_settings.aux_o_legacy ? "ISO 11783-6 VT VERSION 2" : "ISO 11783-6 VT VERSION 6");
-    draw_value_row(LEFT_INFO_WIDTH + 28, 208, 760, "EKRAN", "1024 X 600 DOTYKOWY");
+    char screen[32];
+    std::snprintf(screen, sizeof(screen), "%d X %d DOTYKOWY", board::LCD_WIDTH, board::LCD_HEIGHT);
+    draw_value_row(LEFT_INFO_WIDTH + 28, 208, 760, "EKRAN", screen);
     draw_value_row(LEFT_INFO_WIDTH + 28, 256, 760, "OBSZAR / SOFTKEY", "480 X 480 / 12 KLAWISZY");
     draw_value_row(LEFT_INFO_WIDTH + 28, 304, 760, "AUX",
                    terminal_settings.aux_o_legacy ? "AUX-O TYPE 1 (LEGACY)" : "AUX-N TYPE 2");
@@ -2351,7 +2362,7 @@ void render_terminal_menu(
     const std::vector<std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet>> &auxiliary_working_sets)
 {
     lcd_panel::fill(CHROME_DARK);
-    lcd_panel::fill_rect(0, 0, LEFT_INFO_WIDTH, board::LCD_HEIGHT, CHROME_DARK);
+    lcd_panel::fill_rect(0, 0, LEFT_INFO_WIDTH, board::UI_HEIGHT, CHROME_DARK);
     lcd_panel::draw_text(18, 18, 3, "ISOBUS VT", CHROME_TEXT);
     lcd_panel::draw_text(18, 52, 2, "MENU TERMINALA", CHROME_BORDER);
 
@@ -2404,7 +2415,7 @@ void render_terminal_menu(
 
     if (!terminal_notice.empty())
     {
-        lcd_panel::fill_rect(LEFT_INFO_WIDTH + 28, 560, board::LCD_WIDTH - LEFT_INFO_WIDTH - 56, 30, CHROME_DARK);
+        lcd_panel::fill_rect(LEFT_INFO_WIDTH + 28, 560, board::UI_WIDTH - LEFT_INFO_WIDTH - 56, 30, CHROME_DARK);
         lcd_panel::draw_text(LEFT_INFO_WIDTH + 42, 568, 2, terminal_notice.c_str(), CHROME_TEXT);
     }
 }
@@ -2419,8 +2430,8 @@ void add_editor_target(std::vector<ScreenRect> &targets,
                        std::uint16_t index = 0)
 {
     targets.push_back({
-        .x = x,
-        .y = y,
+        .x = lcd_panel::area_x() + x,
+        .y = lcd_panel::area_y() + y,
         .width = width,
         .height = height,
         .target = {
@@ -2656,8 +2667,11 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
         }
         vt_view::set_working_set_visible(true);
         std::vector<ScreenRect> next_targets;
-        lcd_panel::reset_view_transform();
-        lcd_panel::reset_clip_rect();
+        if constexpr ((board::UI_WIDTH != board::LCD_WIDTH) || (board::UI_HEIGHT != board::LCD_HEIGHT))
+        {
+            lcd_panel::fill(CHROME_DARK);
+        }
+        lcd_panel::use_ui_area();
         render_terminal_menu(next_targets, working_set, working_sets, auxiliary_working_sets);
         render_input_editor(next_targets);
         if (lcd_panel::present() != ESP_OK)
@@ -2763,7 +2777,7 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
                          board::LCD_HEIGHT,
                          CHROME_BACKGROUND);
     constexpr int menu_x = 16;
-    constexpr int menu_y = 202;
+    constexpr int menu_y = (board::LCD_HEIGHT - 196) / 2;
     constexpr int menu_width = 64;
     constexpr int menu_height = 196;
     lcd_panel::fill_rect(menu_x, menu_y, menu_width, menu_height, CHROME_ACTIVE);
@@ -2777,6 +2791,7 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
     lcd_panel::draw_text(menu_x + 26, menu_y + 149, 2, "U", CHROME_TEXT);
     add_screen_target(next_targets, menu_x, menu_y, menu_width, menu_height, TerminalAction::ToggleMenu);
 
+    lcd_panel::use_ui_area();
     render_input_editor(next_targets, &context);
 
     if (lcd_panel::present() != ESP_OK)

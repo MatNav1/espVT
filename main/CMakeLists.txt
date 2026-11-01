@@ -1,6 +1,6 @@
 if(CONFIG_ISOVT_ENABLE_AGISOSTACK)
     # AgIsoStack++ is a regular CMake project, so include it before this
-    # component links against its targets. TWAI is the ESP32-S3 CAN driver.
+    # component links against its targets. TWAI is the ESP32 CAN controller.
     set(CAN_DRIVER "TWAI")
     set(CAN_STACK_DISABLE_THREADS OFF)
     add_subdirectory(
@@ -10,22 +10,43 @@ if(CONFIG_ISOVT_ENABLE_AGISOSTACK)
     target_compile_definitions(HardwareIntegration PRIVATE ESP_PLATFORM)
 endif()
 
+set(ISOVT_SOURCES
+    "app_main.cpp"
+    "aux_n_manager.cpp"
+    "can_monitor.cpp"
+    "gnss_um982.cpp"
+    "isobus_terminal_server.cpp"
+    "lcd_panel.cpp"
+    "lvgl_terminal_view.cpp"
+    "logo_image.cpp"
+    "object_pool_store.cpp"
+    "section_control.cpp"
+    "vt_audio.cpp"
+    "vt_scene_renderer.cpp"
+)
+# Requirements are resolved before sdkconfig is loaded, so they follow the chip.
+set(ISOVT_BOARD_REQUIRES)
+if(IDF_TARGET STREQUAL "esp32p4")
+    list(APPEND ISOVT_BOARD_REQUIRES esp_driver_ppa esp_lcd_touch_gsl3680)
+endif()
+if(CONFIG_ISOVT_BOARD_GUITION_JC8012P4A1C)
+    list(APPEND ISOVT_SOURCES
+        "board_support_jc8012p4.cpp"
+        "jc8012_lcd_init.c"
+        "lcd_backend_dsi.cpp"
+        "touch_gsl3680.cpp"
+    )
+else()
+    list(APPEND ISOVT_SOURCES
+        "board_support_waveshare7b.cpp"
+        "lcd_backend_rgb.cpp"
+        "touch_gt911.cpp"
+    )
+endif()
+
 idf_component_register(
     SRCS
-        "app_main.cpp"
-        "aux_n_manager.cpp"
-        "board_support.cpp"
-        "can_monitor.cpp"
-        "gnss_um982.cpp"
-        "isobus_terminal_server.cpp"
-        "lcd_panel.cpp"
-        "lvgl_terminal_view.cpp"
-        "logo_image.cpp"
-        "object_pool_store.cpp"
-        "section_control.cpp"
-        "touch_gt911.cpp"
-        "vt_audio.cpp"
-        "vt_scene_renderer.cpp"
+        ${ISOVT_SOURCES}
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -46,6 +67,7 @@ idf_component_register(
         nvs_flash
         pthread
         spiffs
+        ${ISOVT_BOARD_REQUIRES}
     EMBED_FILES
         "vt_font_roboto_mono.bin"
 )

@@ -5,7 +5,7 @@
 #include "lvgl_terminal_view.hpp"
 #include "object_pool_store.hpp"
 #include "section_control.hpp"
-#include "touch_gt911.hpp"
+#include "touch.hpp"
 #include "vt_audio.hpp"
 #include "vt_scene_renderer.hpp"
 
@@ -46,7 +46,7 @@ void start_terminal_when_bus_is_active(void *)
 
 extern "C" void app_main()
 {
-    ESP_LOGI(TAG, "Starting ESP32-S3 ISOBUS VT");
+    ESP_LOGI(TAG, "Starting ESP ISOBUS VT on %s", CONFIG_IDF_TARGET);
 
     // AgIsoStack++ creates nested C++ threads for CAN and object-pool parsing.
     auto pthread_config = esp_pthread_get_default_config();
@@ -80,8 +80,8 @@ extern "C" void app_main()
     can_monitor::enable_ui_updates();
     vt_view::set_status("Initializing ISOBUS terminal");
 
-    const bool touch_ready = (touch_gt911::start() == ESP_OK);
-    ESP_LOGI(TAG, "GT911 touch: %s", touch_ready ? "ready" : "not ready");
+    const bool touch_ready = (touch::start() == ESP_OK);
+    ESP_LOGI(TAG, "Touch: %s", touch_ready ? "ready" : "not ready");
 
     const bool local_ui_ready = isovt::start_local_ui();
     ESP_LOGI(TAG, "Local VT menu: %s", local_ui_ready ? "ready" : "not ready");
