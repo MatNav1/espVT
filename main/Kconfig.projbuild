@@ -17,7 +17,8 @@ config ISOVT_BOARD_GUITION_JC8012P4A1C
     help
         10.1" JD9365 panel ("new panel", SKU 10153001-V3), driven in landscape
         through PPA rotation. The board has no CAN transceiver; connect an
-        external 3.3 V transceiver to the configured CAN GPIOs.
+        external one with 5 V VCC and 3.3 V VIO (e.g. TCAN1044AV-Q1,
+        TJA1051T/3, TJA1462) to the configured CAN GPIOs.
 
 endchoice
 
@@ -39,16 +40,16 @@ if ISOVT_BOARD_GUITION_JC8012P4A1C
 
 choice ISOVT_DISPLAY_ROTATION
     prompt "Landscape orientation"
-    default ISOVT_DISPLAY_ROTATION_90
+    default ISOVT_DISPLAY_ROTATION_270
     help
         The 800x1280 panel is mounted in landscape. Rotation is done by the
         PPA when a frame is presented; touch coordinates are rotated to match.
 
 config ISOVT_DISPLAY_ROTATION_90
-    bool "90 degrees"
+    bool "90 degrees (front camera at the bottom edge)"
 
 config ISOVT_DISPLAY_ROTATION_270
-    bool "270 degrees"
+    bool "270 degrees (front camera at the top edge)"
 
 endchoice
 

@@ -57,7 +57,7 @@ void render_locked()
     }
 
     lcd_panel::fill(COLOR_BACKGROUND);
-    lcd_panel::fill_rect(0, 0, board::LCD_WIDTH, board::UI_Y + 58, COLOR_HEADER);
+    lcd_panel::fill_rect(0, 0, board::LCD_WIDTH, board::UI_Y + 58 * board::UI_SCALE_NUMERATOR / board::UI_SCALE_DENOMINATOR, COLOR_HEADER);
     lcd_panel::use_ui_area();
     lcd_panel::draw_text(32, 18, 3, ui_text::get(ui_text::Id::StatusHeader), COLOR_TEXT);
     lcd_panel::draw_text(764, 18, 2, can_ready ? ui_text::get(ui_text::Id::CanReady) : ui_text::get(ui_text::Id::CanStarting), can_ready ? COLOR_OK : COLOR_TEXT);
@@ -407,8 +407,8 @@ void on_touch(std::uint16_t x, std::uint16_t y, std::size_t count)
 
 bool is_idle_menu_touch(std::uint16_t lcd_x, std::uint16_t lcd_y)
 {
-    const int x = static_cast<int>(lcd_x) - board::UI_X;
-    const int y = static_cast<int>(lcd_y) - board::UI_Y;
+    const int x = (static_cast<int>(lcd_x) - board::UI_X) * board::UI_SCALE_DENOMINATOR / board::UI_SCALE_NUMERATOR;
+    const int y = (static_cast<int>(lcd_y) - board::UI_Y) * board::UI_SCALE_DENOMINATOR / board::UI_SCALE_NUMERATOR;
     if (view_mutex == nullptr)
     {
         return false;

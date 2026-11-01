@@ -83,12 +83,23 @@ set_source_files_properties("stb_truetype_impl.c" PROPERTIES COMPILE_OPTIONS "-w
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(LOGO_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(LOGO_HEADER "${LOGO_GENERATED_DIR}/logo_rgb565.hpp")
+# The boot logo is drawn in the UI area; on the 10.1" board that area is scaled
+# by 5/4, so the asset is generated at that size and copied 1:1.
+if(CONFIG_ISOVT_BOARD_GUITION_JC8012P4A1C)
+    set(LOGO_MAX_WIDTH 900)
+    set(LOGO_MAX_HEIGHT 350)
+    set(LOGO_PADDING 15)
+else()
+    set(LOGO_MAX_WIDTH 720)
+    set(LOGO_MAX_HEIGHT 280)
+    set(LOGO_PADDING 12)
+endif()
 add_custom_command(
     OUTPUT "${LOGO_HEADER}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LOGO_GENERATED_DIR}"
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/bmp_to_rgb565.py"
-            "${CMAKE_SOURCE_DIR}/logo.png" "${LOGO_HEADER}" --max-width 720 --max-height 280 --padding 12
-    DEPENDS "${CMAKE_SOURCE_DIR}/logo.png" "${CMAKE_SOURCE_DIR}/tools/bmp_to_rgb565.py"
+            "${CMAKE_SOURCE_DIR}/logo.png" "${LOGO_HEADER}" --max-width ${LOGO_MAX_WIDTH} --max-height ${LOGO_MAX_HEIGHT} --padding ${LOGO_PADDING}
+    DEPENDS "${CMAKE_SOURCE_DIR}/logo.png" "${CMAKE_SOURCE_DIR}/tools/bmp_to_rgb565.py" "${CMAKE_CURRENT_LIST_FILE}"
     COMMENT "Preparing RGB565 boot logo"
     VERBATIM
 )

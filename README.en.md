@@ -46,12 +46,17 @@ documentation.
   used in landscape as 1280x800; the PPA does the rotation in hardware,
 - GSL3680 touch over I2C (SDA GPIO7, SCL GPIO8, RST GPIO22, INT GPIO21),
 - backlight GPIO23, LCD reset GPIO27,
-- no CAN transceiver on the board: connect an external 3.3 V transceiver
-  (e.g. SN65HVD230) to the FPC3 connector, by default TX GPIO4, RX GPIO5,
-  powered from VDDA/GND.
+- no CAN transceiver on the board. Use an external transceiver with 5 V VCC
+  and a 3.3 V VIO pin, e.g. TCAN1044AV-Q1 (TI) or TJA1051T/3 / TJA1462 (NXP);
+  its bus pins should withstand a short to the 12/24 V supply. VCC 5 V comes
+  from your own 12/24 V to 5 V converter (FPC3/FPC4 only provide 3.3 V), VIO
+  3.3 V from VDDA on FPC3 pins 13/14, TXD/RXD on GPIO4/GPIO5 (FPC3 pins 8/7).
+  FPC3 is a 14-pin 0.5 mm bottom-contact ZIF connector, matching Würth
+  68711414522.
 
-The terminal menu and the waiting screen are drawn 1:1 in a centered 1024x600
-window; the VT area uses the full 800-pixel height. Sound (ES8311) and GNSS are
+The terminal menu and the waiting screen (1024x600 layout) are scaled by 5/4 to
+1280x750; the VT area uses the full 800-pixel height. The front camera is at the
+top edge. Sound (ES8311) and GNSS are
 not ported to this board yet.
 
 ## 3D-printed enclosure
