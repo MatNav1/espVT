@@ -14,6 +14,7 @@ enum class TextEncoding : std::uint8_t
     ISO8859_4 = 4,
     ISO8859_5 = 5,
     ISO8859_7 = 7,
+    UTF8 = 0xFF, // terminal UI texts
 };
 
 esp_err_t init();
@@ -41,7 +42,10 @@ esp_err_t fill(std::uint16_t color);
 esp_err_t fill_rect(int x, int y, int width, int height, std::uint16_t color);
 esp_err_t draw_rgb565(int x, int y, int width, int height, const std::uint16_t *pixels);
 void draw_line(int x0, int y0, int x1, int y1, std::uint16_t color, int thickness = 1);
+// UTF-8 UI text in 6x10 cells per scale step.
 void draw_text(int x, int y, int scale, const char *text, std::uint16_t color);
+// Number of characters in a UTF-8 UI text.
+int text_length(const char *text);
 void draw_text_sized(int x,
                      int y,
                      int character_width,

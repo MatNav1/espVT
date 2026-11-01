@@ -21,7 +21,10 @@ set(ISOVT_SOURCES
     "logo_image.cpp"
     "object_pool_store.cpp"
     "section_control.cpp"
+    "stb_truetype_impl.c"
     "vt_audio.cpp"
+    "ui_text.cpp"
+    "vt_font.cpp"
     "vt_scene_renderer.cpp"
 )
 # Requirements are resolved before sdkconfig is loaded, so they follow the chip.
@@ -49,6 +52,8 @@ idf_component_register(
         ${ISOVT_SOURCES}
     INCLUDE_DIRS
         "."
+    PRIV_INCLUDE_DIRS
+        "../third_party/stb"
     REQUIRES
         driver
         esp_app_format
@@ -69,8 +74,11 @@ idf_component_register(
         spiffs
         ${ISOVT_BOARD_REQUIRES}
     EMBED_FILES
-        "vt_font_roboto_mono.bin"
+        "../assets/fonts/RobotoMono-Regular.ttf"
 )
+
+# Third-party rasterizer, compiled as shipped.
+set_source_files_properties("stb_truetype_impl.c" PROPERTIES COMPILE_OPTIONS "-w")
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(LOGO_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
