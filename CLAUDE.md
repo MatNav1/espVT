@@ -15,7 +15,7 @@ The repo has two firmware projects:
 `./make_espVT.sh` is the build entry point. It imports the ESP-IDF environment from `IDF_ACTIVATE` (default `~/.espressif/tools/activate_idf_v6.1.sh`) when `idf.py` is not on PATH:
 
 ```sh
-./make_espVT.sh                    # all variants -> delivery/espVT-<git describe>-<VARIANT>.bin (merged, flash at 0x0)
+./make_espVT.sh                    # all variants -> delivery/espVT-<git describe>[-RS232|-NTRIP].bin (merged, flash at 0x0; default has no suffix)
 ./make_espVT.sh rs232 [force]      # one variant: default | rs232 | ntrip; force deletes the build dir first
 ./make_espVT.sh flash rs232 /dev/ttyACM0
 ./make_espVT.sh menuconfig ntrip   # "ESP ISOBUS VT" menu: Kconfig in main/Kconfig.projbuild

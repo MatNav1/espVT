@@ -116,7 +116,8 @@ esptool.py --chip esp32s3 --port PORT write_flash 0x0 espVT-v0.1.0-RS232.bin
 ```
 
 Attach this single RS-232 variant file to the GitHub Release. The image is meant
-for 16 MB flash, DIO mode and 80 MHz.
+for 16 MB flash; the firmware runs it in QIO mode at 120 MHz (the image header
+uses DIO/80 MHz, as is usual for ESP-IDF, and the bootloader switches over).
 
 The build is checked with ESP-IDF 6.1 for the ESP32-S3. The firmware initializes
 the 1024x600 RGB panel with the Waveshare parameters, shows the boot logo and a

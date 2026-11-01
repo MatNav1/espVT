@@ -118,16 +118,14 @@ build_variant() {
     if [ "$FORCE_REBUILD" == true ]; then
         rm -rf "$BUILD_DIR"
     fi
-    # Without an explicit set-target a fresh build dir falls back to the esp32 target.
-    if [ ! -f "$BUILD_DIR/CMakeCache.txt" ]; then
-        idf_variant set-target esp32s3 || return 1
-    fi
+    # The target comes from CONFIG_IDF_TARGET in sdkconfig.defaults. No set-target here:
+    # it would regenerate the variant's sdkconfig and drop menuconfig settings.
 
     idf_variant build || return 1
     idf_variant merge-bin || return 1
 
-    mkdir -p delivery
-    cp "$BUILD_DIR/merged-binary.bin" "delivery/$DELIVERY_NAME"
+    mkdir -p delivery || return 1
+    cp "$BUILD_DIR/merged-binary.bin" "delivery/$DELIVERY_NAME" || return 1
     echo "[$1] -> delivery/$DELIVERY_NAME"
 }
 
