@@ -105,6 +105,10 @@ select_variant() {
     esac
 }
 
+# All variants are ESP32-S3. Set the target explicitly, so an IDF_TARGET inherited
+# from the shell cannot override it.
+export IDF_TARGET=esp32s3
+
 idf_variant() {
     idf.py -B "$BUILD_DIR" -D SDKCONFIG="$SDKCONFIG_FILE" -D SDKCONFIG_DEFAULTS="$SDKCONFIG_DEFAULTS" "$@"
 }
@@ -118,7 +122,7 @@ build_variant() {
     if [ "$FORCE_REBUILD" == true ]; then
         rm -rf "$BUILD_DIR"
     fi
-    # The target comes from CONFIG_IDF_TARGET in sdkconfig.defaults. No set-target here:
+    # The target comes from IDF_TARGET (exported above). No set-target here:
     # it would regenerate the variant's sdkconfig and drop menuconfig settings.
 
     idf_variant build || return 1
