@@ -65,6 +65,11 @@ void begin_object_pool_progress(std::uint32_t expected_bytes);
 void finish_object_pool_progress();
 bool render_working_set(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> &working_set);
 
+// Construct before the CAN tasks start. Repaint callbacks can run while the
+// scheduler is suspended, where ESP-IDF cannot wait for local-static guards.
+std::vector<std::weak_ptr<isobus::VirtualTerminalServerManagedWorkingSet>> announced_working_sets;
+std::recursive_mutex announced_working_sets_mutex;
+
 std::uint64_t client_name(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> &working_set)
 {
     const auto control_function = working_set ? working_set->get_control_function() : nullptr;
@@ -567,6 +572,7 @@ std::atomic<std::uint64_t> pending_working_set_selection{ 0 };
 std::mutex inactive_machine_mutex;
 std::vector<std::pair<std::uint64_t, std::uint8_t>> pending_inactive_machines;
 std::uint32_t last_terminal_menu_refresh_ms = 0;
+std::atomic_bool pending_aux_n_status_render{ false };
 constexpr char TERMINAL_SETTINGS_NAMESPACE[] = "vt_settings";
 constexpr std::uint32_t FIRST_POST_TRANSITION_RENDER_DELAY_MS = 100;
 constexpr std::uint32_t SECOND_POST_TRANSITION_RENDER_DELAY_MS = 350;
@@ -682,6 +688,10 @@ void load_terminal_settings()
         {
             settings.aux_o_legacy = value != 0U;
         }
+        if (nvs_get_u8(handle, "diagnostics", &value) == ESP_OK)
+        {
+            settings.show_diagnostics = value != 0U;
+        }
         nvs_close(handle);
     }
     vt_scene_renderer::set_terminal_settings(settings);
@@ -735,6 +745,10 @@ bool save_terminal_settings()
     if (result == ESP_OK)
     {
         result = nvs_set_u8(handle, "aux_o", settings.aux_o_legacy ? 1U : 0U);
+    }
+    if (result == ESP_OK)
+    {
+        result = nvs_set_u8(handle, "diagnostics", settings.show_diagnostics ? 1U : 0U);
     }
     if (result == ESP_OK)
     {
@@ -915,6 +929,11 @@ void update_virtual_terminal()
     {
         terminal_server->update_server();
 
+        if (pending_aux_n_status_render.exchange(false) && vt_scene_renderer::is_menu_open())
+        {
+            render_working_set(terminal_server->get_ui_active_working_set());
+        }
+
         std::vector<std::pair<std::uint64_t, std::uint8_t>> inactive_machines;
         {
             std::lock_guard<std::mutex> lock(inactive_machine_mutex);
@@ -946,11 +965,13 @@ void update_virtual_terminal()
             render_working_set(terminal_server->get_ui_active_working_set());
         }
         const std::uint32_t now = isobus::SystemTiming::get_timestamp_ms();
-        if (vt_scene_renderer::is_menu_open() &&
-            isobus::SystemTiming::time_expired_ms(last_terminal_menu_refresh_ms, 1000))
+        if (isobus::SystemTiming::time_expired_ms(last_terminal_menu_refresh_ms, 1000))
         {
             last_terminal_menu_refresh_ms = now;
-            render_working_set(terminal_server->get_ui_active_working_set());
+            if (vt_scene_renderer::is_menu_open() || vt_scene_renderer::get_terminal_settings().show_diagnostics)
+            {
+                render_working_set(terminal_server->get_ui_active_working_set());
+            }
         }
     }
 }
@@ -1127,7 +1148,7 @@ bool configure_language_and_units(bool broadcast)
 bool announce_language_for_working_set(
     const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> &working_set)
 {
-    static std::vector<std::weak_ptr<isobus::VirtualTerminalServerManagedWorkingSet>> announced_working_sets;
+    const std::lock_guard<std::recursive_mutex> lock(announced_working_sets_mutex);
     announced_working_sets.erase(
         std::remove_if(announced_working_sets.begin(),
                        announced_working_sets.end(),
@@ -1201,6 +1222,13 @@ void connect_view_events(EspVirtualTerminalServer &server)
 
 namespace isovt
 {
+void request_aux_n_status_render()
+{
+#if ISOVT_ENABLE_AGISOSTACK
+    pending_aux_n_status_render = true;
+#endif
+}
+
 void on_machine_inactive(std::uint64_t name, std::uint8_t address)
 {
 #if ISOVT_ENABLE_AGISOSTACK
@@ -1813,6 +1841,11 @@ bool on_touch_pressed(std::uint16_t x, std::uint16_t y)
                 result = save_terminal_settings();
                 vt_scene_renderer::set_notice(result ? "NUMER VT ZAPISANY, URUCHOM TERMINAL PONOWNIE" :
                                                         "NUMER ZMIENIONY, ALE ZAPIS NIE UDAL SIE");
+                break;
+            case vt_scene_renderer::TerminalAction::ToggleDiagnostics:
+                vt_scene_renderer::apply_terminal_action(target.terminal_action);
+                result = save_terminal_settings();
+                vt_scene_renderer::set_notice(result ? "DIAGNOSTYKA: USTAWIENIE ZAPISANE" : "BLAD ZAPISU DIAGNOSTYKI");
                 break;
             case vt_scene_renderer::TerminalAction::CycleDataMaskSize:
                 vt_scene_renderer::apply_terminal_action(target.terminal_action);

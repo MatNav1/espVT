@@ -84,6 +84,7 @@ enum class TerminalAction : std::uint8_t
     AuxInputPreviousPage,
     AuxInputNextPage,
     ToggleAuxOLegacy,
+    ToggleDiagnostics,
 };
 
 enum class TerminalLanguage : std::uint8_t
@@ -119,6 +120,7 @@ struct TerminalSettings
     std::uint8_t alarm_volume = 90;
     bool audio_muted = false;
     bool aux_o_legacy = false;
+    bool show_diagnostics = false;
 };
 
 struct HitTarget

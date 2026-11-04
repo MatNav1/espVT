@@ -143,6 +143,15 @@ virtualTerminalClient.set_object_pool_scaling(0, 480, 60);
 Bez skalowania po stronie ECU stara pula 480 moze zajac tylko czesc logicznego
 obszaru 600. Rozmiar 480 pozostaje wiec bezpiecznym ustawieniem dla nieznanych maszyn.
 
+## Diagnostyka nad menu
+
+W `MENU -> TERMINAL -> DIAGNOSTYKA NAD MENU` mozna wlaczyc panel po lewej
+stronie ekranu maszyny. Ustawienie jest zapamietywane po restarcie.
+Panel odswieza sie raz na sekunde: CPU0/CPU1 to biezace obciazenie rdzeni,
+CAN to szacowane obciazenie magistrali, RAM/PSR to wolna pamiec w KiB,
+RXQ/TXQ to kolejki CAN, a ERR to aktualne liczniki bledow nadawania/odbioru.
+Pierwszy pomiar CPU pojawia sie po zebraniu pelnego przedzialu pomiarowego.
+
 ## Warianty GNSS
 
 Wariant `RTK` z UM982 odbiera NMEA `GGA` i `RMC` po UART, pokazuje jakosc fixu na

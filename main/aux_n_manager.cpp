@@ -1,5 +1,6 @@
 #include "aux_n_manager.hpp"
 
+#include "isobus_terminal_server.hpp"
 #include "lvgl_terminal_view.hpp"
 
 #include "esp_log.h"
@@ -76,6 +77,12 @@ public:
         isobus::CANNetworkManager::CANNetwork.add_any_control_function_parameter_group_number_callback(
             static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal),
             &Manager::on_message,
+            this);
+        // Normal AUX-N input status is broadcast on VT-to-ECU (E600).
+        // Learn-mode status is directed to this VT on ECU-to-VT (E700).
+        isobus::CANNetworkManager::CANNetwork.add_any_control_function_parameter_group_number_callback(
+            static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::VirtualTerminalToECU),
+            &Manager::on_broadcast_input_status,
             this);
         started = true;
         return true;
@@ -787,6 +794,18 @@ private:
         }
     }
 
+    static void on_broadcast_input_status(const isobus::CANMessage &message, void *parent)
+    {
+        // E600 also carries commands from other VTs. Only consume global AUX-N
+        // status here, never treat another terminal's commands as responses.
+        if ((parent != nullptr) && (message.get_data_length() == 8U) &&
+            (message.get_uint8_at(0) == AUXILIARY_INPUT_STATUS_TYPE_TWO) &&
+            (message.get_identifier().get_destination_address() == 0xFFU))
+        {
+            static_cast<Manager *>(parent)->process_message(message);
+        }
+    }
+
     void process_message(const isobus::CANMessage &message)
     {
         if (message.get_data_length() < 4U || !message.has_valid_source_control_function())
@@ -886,6 +905,7 @@ private:
             const std::uint16_t value_2 = message.get_uint16_at(5);
             const std::uint8_t state = message.get_uint8_at(7);
             bool assign_learned_input = false;
+            bool input_status_changed = false;
             {
                 std::lock_guard<std::mutex> lock(catalog_mutex);
                 auto status = std::find_if(catalog.input_statuses.begin(), catalog.input_statuses.end(),
@@ -895,6 +915,10 @@ private:
                                            });
                 const bool moved = (status != catalog.input_statuses.end()) &&
                                    ((status->value_1 != value_1) || (status->value_2 != value_2));
+                input_status_changed = (status == catalog.input_statuses.end()) ||
+                                       (status->value_1 != value_1) ||
+                                       (status->value_2 != value_2) ||
+                                       (status->state != state);
                 if (status == catalog.input_statuses.end())
                 {
                     catalog.input_statuses.push_back({ source_name, input_object_id, value_1, value_2, state, esp_timer_get_time() });
@@ -919,6 +943,16 @@ private:
             if (assign_learned_input)
             {
                 assign_selected(aux_n::Protocol::Type2, source_name, input_object_id);
+            }
+            if (input_status_changed)
+            {
+                isovt::request_aux_n_status_render();
+                ESP_LOGI(TAG, "AUX-N input NAME=0x%016llx id=%u value1=%u value2=%u state=0x%02x",
+                         static_cast<unsigned long long>(source_name),
+                         static_cast<unsigned>(input_object_id),
+                         static_cast<unsigned>(value_1),
+                         static_cast<unsigned>(value_2),
+                         static_cast<unsigned>(state));
             }
             ESP_LOGD(TAG, "AUX-N input NAME=0x%016llx id=%u value1=%u state=0x%02x",
                      static_cast<unsigned long long>(source_name),
