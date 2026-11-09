@@ -371,7 +371,9 @@ public:
 
     VTVersion get_version() const override
     {
-        return vt_scene_renderer::get_terminal_settings().aux_o_legacy ? VTVersion::Version2OrOlder : VTVersion::Version6;
+        // Version 5 and newer require the Extended Version commands (0xD3-0xD6),
+        // which this terminal does not implement. Version 4 still covers AUX-N.
+        return vt_scene_renderer::get_terminal_settings().aux_o_legacy ? VTVersion::Version2OrOlder : VTVersion::Version4;
     }
 
     std::uint8_t get_number_of_navigation_soft_keys() const override
