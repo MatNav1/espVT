@@ -107,14 +107,14 @@ VTLayout current_layout()
     const int soft_key_designator_size = data_mask_size / 8;
     const int scale_numerator = data_mask_size == 480 ? 5 : 1;
     const int scale_denominator = data_mask_size == 480 ? 4 : 1;
-    constexpr int working_set_bar_screen_width = 136;
-    const int working_set_bar_width = working_set_bar_screen_width * scale_denominator / scale_numerator;
+    const int soft_key_height = data_mask_size / SOFT_KEY_ROWS;
+    const int soft_key_width = soft_key_height;
+    // The selector has the size of a soft key.
+    const int working_set_bar_width = soft_key_width;
     const int working_set_slot_height = working_set_bar_width;
     const int working_set_gap = data_mask_size / 120;
     const int data_mask_x = VT_ORIGIN_X + working_set_bar_width + working_set_gap;
     const int soft_key_x = data_mask_x + data_mask_size;
-    const int soft_key_height = data_mask_size / SOFT_KEY_ROWS;
-    const int soft_key_width = soft_key_height;
     const int content_width = soft_key_x + SOFT_KEY_COLUMNS * soft_key_width;
     const int scaled_width = content_width * scale_numerator / scale_denominator;
     const int screen_x = std::max(0, board::LCD_WIDTH - scaled_width);
@@ -1620,8 +1620,8 @@ void render_working_set_bar(
                           sizeof(address),
                           "SA %u",
                           static_cast<unsigned>(working_set->get_control_function()->get_address()));
-            lcd_panel::draw_text(VT_ORIGIN_X + 18, y + 34, 2, address, CHROME_TEXT);
-            lcd_panel::draw_text(VT_ORIGIN_X + 15, y + 58, 1, "BRAK PULI", CHROME_BORDER);
+            lcd_panel::draw_text(VT_ORIGIN_X + 4, y + 34, 2, address, CHROME_TEXT);
+            lcd_panel::draw_text(VT_ORIGIN_X + 4, y + 58, 1, "BRAK PULI", CHROME_BORDER);
         }
 
         if (working_set_object)
