@@ -371,7 +371,9 @@ public:
 
     VTVersion get_version() const override
     {
-        return vt_scene_renderer::get_terminal_settings().aux_o_legacy ? VTVersion::Version2OrOlder : VTVersion::Version6;
+        // Version 5 and newer require the Extended Version commands (0xD3-0xD6),
+        // which this terminal does not implement. Version 4 still covers AUX-N.
+        return vt_scene_renderer::get_terminal_settings().aux_o_legacy ? VTVersion::Version2OrOlder : VTVersion::Version4;
     }
 
     std::uint8_t get_number_of_navigation_soft_keys() const override
@@ -435,6 +437,7 @@ public:
     std::vector<std::uint8_t> get_supported_objects() const override
     {
         using Type = isobus::VirtualTerminalObjectType;
+        // Limited to what the reported VT version 4 defines.
         return {
             static_cast<std::uint8_t>(Type::WorkingSet),
             static_cast<std::uint8_t>(Type::DataMask),
@@ -477,12 +480,6 @@ public:
             static_cast<std::uint8_t>(Type::ExtendedInputAttributes),
             static_cast<std::uint8_t>(Type::ColourMap),
             static_cast<std::uint8_t>(Type::ObjectLabelRefrenceList),
-            static_cast<std::uint8_t>(Type::ExternalObjectDefinition),
-            static_cast<std::uint8_t>(Type::ExternalReferenceNAME),
-            static_cast<std::uint8_t>(Type::ExternalObjectPointer),
-            static_cast<std::uint8_t>(Type::Animation),
-            static_cast<std::uint8_t>(Type::GraphicData),
-            static_cast<std::uint8_t>(Type::ScaledGraphic),
         };
     }
 
