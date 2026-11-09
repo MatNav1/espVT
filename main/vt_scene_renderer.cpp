@@ -557,6 +557,12 @@ void draw_textual_object(RenderContext &context,
 {
     const int width = object->get_width();
     const int height = object->get_height();
+    // Pools may contain zero-sized text objects; font_info() caps the font
+    // height to the object height, so these would divide by zero below.
+    if ((width <= 0) || (height <= 0))
+    {
+        return;
+    }
     const std::uint16_t background = colour(context, object->get_background_color());
     if (!transparent)
     {
