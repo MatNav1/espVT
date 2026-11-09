@@ -437,6 +437,7 @@ public:
     std::vector<std::uint8_t> get_supported_objects() const override
     {
         using Type = isobus::VirtualTerminalObjectType;
+        // Limited to what the reported VT version 4 defines.
         return {
             static_cast<std::uint8_t>(Type::WorkingSet),
             static_cast<std::uint8_t>(Type::DataMask),
@@ -479,12 +480,6 @@ public:
             static_cast<std::uint8_t>(Type::ExtendedInputAttributes),
             static_cast<std::uint8_t>(Type::ColourMap),
             static_cast<std::uint8_t>(Type::ObjectLabelRefrenceList),
-            static_cast<std::uint8_t>(Type::ExternalObjectDefinition),
-            static_cast<std::uint8_t>(Type::ExternalReferenceNAME),
-            static_cast<std::uint8_t>(Type::ExternalObjectPointer),
-            static_cast<std::uint8_t>(Type::Animation),
-            static_cast<std::uint8_t>(Type::GraphicData),
-            static_cast<std::uint8_t>(Type::ScaledGraphic),
         };
     }
 
