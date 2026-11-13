@@ -329,12 +329,12 @@ struct FontRenderInfo
 };
 
 FontRenderInfo font_info(RenderContext &context,
-                         const std::shared_ptr<isobus::VTObject> &object,
+                         int object_height,
                          std::uint16_t font_attributes_id,
                          std::uint16_t fallback_colour)
 {
     FontRenderInfo result;
-    result.height = std::max(1, std::min<int>(object->get_height(), 8));
+    result.height = std::max(1, std::min(object_height, 8));
     result.width = std::max(1, result.height * 6 / 8);
     result.colour = fallback_colour;
 
@@ -347,7 +347,7 @@ FontRenderInfo font_info(RenderContext &context,
     const auto font = std::static_pointer_cast<isobus::FontAttributes>(attributes);
     const int requested_width = std::max(1, static_cast<int>(font->get_font_width_pixels()));
     const int requested_height = std::max(1, static_cast<int>(font->get_font_height_pixels()));
-    result.height = std::min<int>(object->get_height(), requested_height);
+    result.height = std::max(1, std::min(object_height, requested_height));
     result.width = std::max(1, requested_width * result.height / requested_height);
     result.colour = colour(context, font->get_colour());
     result.bold = font->get_style(isobus::FontAttributes::FontStyleBits::Bold);
@@ -557,13 +557,21 @@ void draw_textual_object(RenderContext &context,
 {
     const int width = object->get_width();
     const int height = object->get_height();
+    // Pools may contain zero-sized text objects; font_info() caps the font
+    // height to the object height, so these would divide by zero below.
+    // A CAN thread can resize the object during rendering, so use only these
+    // values from here on.
+    if ((width <= 0) || (height <= 0))
+    {
+        return;
+    }
     const std::uint16_t background = colour(context, object->get_background_color());
     if (!transparent)
     {
         lcd_panel::fill_rect(x, y, width, height, background);
     }
 
-    auto font = font_info(context, object, font_attributes_id, contrasting_text_colour(background));
+    auto font = font_info(context, height, font_attributes_id, contrasting_text_colour(background));
     const std::string shown_text = display_text(text, font.encoding);
     bool auto_wrap = false;
     if ((object->get_object_type() == isobus::VirtualTerminalObjectType::InputString) ||
